@@ -1,0 +1,27 @@
+# Binaries and object files
+*.exe
+*.dll
+*.so
+*.dylib
+*.bin
+*.hex
+*.obj
+*.pdb
+
+# Build output
+bin/
+obj/
+*.log
+
+# OS generated
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# IDE and editors
+.vs/
+.vscode/
+*.suo
+*.user
