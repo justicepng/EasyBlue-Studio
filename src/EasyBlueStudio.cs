@@ -3,6 +3,7 @@ using System.IO;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -33,8 +34,706 @@ namespace EasyBlueStudio {
         }
     }
 
+    // =========================================================================
+    // CONFIGURATION MODEL
+    // =========================================================================
+    public class StudioConfig {
+        public string PhoneEdge = "Right"; // Left, Right, Top, Bottom
+        public bool EdgeTraversalEnabled = true;
+        public bool EdgeBounceReturnEnabled = true;
+        public double MouseSpeed = 1.0;
+        public int EdgeDeadzonePixels = 8;
+        public int InputMode = 0; // 0: Combo (KB+Mouse), 1: Keyboard Only, 2: Mouse Only
+        public bool LedEnabled = true;
+        public int PasteDelayMs = 15;
+        public bool AutoStartWithWindows = false;
+        public bool StartMinimized = false;
+
+        // Hotkeys
+        public string HotkeySwitch = "Ctrl+Alt+Right";
+        public string HotkeyReturn = "Ctrl+Alt+Left";
+        public string HotkeyDisconnect = "Ctrl+Alt+End";
+        public string HotkeySlot1 = "Ctrl+F1";
+        public string HotkeySlot2 = "Ctrl+F2";
+        public string HotkeySlot3 = "Ctrl+F3";
+        public string HotkeySlot4 = "Ctrl+F4";
+        public string HotkeyPaste = "Ctrl+Alt+V";
+
+        // Paired Device Slots (Up to 4 devices)
+        public string[] DeviceSlots = new string[] {
+            "스마트폰 1 (주 기기)",
+            "태블릿 2 (보조 기기)",
+            "스마트폰 3 (슬롯 3)",
+            "디바이스 4 (슬롯 4)"
+        };
+        public int ActiveSlotIndex = 0;
+
+        private static string ConfigPath {
+            get {
+                string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                string dir = System.IO.Path.Combine(appData, "EasyBlueStudio");
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                return System.IO.Path.Combine(dir, "config.ini");
+            }
+        }
+
+        public static StudioConfig Load() {
+            var cfg = new StudioConfig();
+            try {
+                if (File.Exists(ConfigPath)) {
+                    string[] lines = File.ReadAllLines(ConfigPath, Encoding.UTF8);
+                    foreach (string rawLine in lines) {
+                        string line = rawLine.Trim();
+                        if (string.IsNullOrEmpty(line) || line.StartsWith("#") || line.StartsWith(";")) continue;
+                        int eqIdx = line.IndexOf('=');
+                        if (eqIdx <= 0) continue;
+                        string key = line.Substring(0, eqIdx).Trim();
+                        string val = line.Substring(eqIdx + 1).Trim();
+
+                        if (key.Equals("PhoneEdge", StringComparison.OrdinalIgnoreCase)) cfg.PhoneEdge = val;
+                        else if (key.Equals("EdgeTraversalEnabled", StringComparison.OrdinalIgnoreCase)) bool.TryParse(val, out cfg.EdgeTraversalEnabled);
+                        else if (key.Equals("EdgeBounceReturnEnabled", StringComparison.OrdinalIgnoreCase)) bool.TryParse(val, out cfg.EdgeBounceReturnEnabled);
+                        else if (key.Equals("MouseSpeed", StringComparison.OrdinalIgnoreCase)) double.TryParse(val, out cfg.MouseSpeed);
+                        else if (key.Equals("InputMode", StringComparison.OrdinalIgnoreCase)) int.TryParse(val, out cfg.InputMode);
+                        else if (key.Equals("LedEnabled", StringComparison.OrdinalIgnoreCase)) bool.TryParse(val, out cfg.LedEnabled);
+                        else if (key.Equals("HotkeySwitch", StringComparison.OrdinalIgnoreCase)) cfg.HotkeySwitch = val;
+                        else if (key.Equals("HotkeyReturn", StringComparison.OrdinalIgnoreCase)) cfg.HotkeyReturn = val;
+                        else if (key.Equals("HotkeyDisconnect", StringComparison.OrdinalIgnoreCase)) cfg.HotkeyDisconnect = val;
+                        else if (key.Equals("HotkeySlot1", StringComparison.OrdinalIgnoreCase)) cfg.HotkeySlot1 = val;
+                        else if (key.Equals("HotkeySlot2", StringComparison.OrdinalIgnoreCase)) cfg.HotkeySlot2 = val;
+                        else if (key.Equals("HotkeySlot3", StringComparison.OrdinalIgnoreCase)) cfg.HotkeySlot3 = val;
+                        else if (key.Equals("HotkeySlot4", StringComparison.OrdinalIgnoreCase)) cfg.HotkeySlot4 = val;
+                        else if (key.Equals("HotkeyPaste", StringComparison.OrdinalIgnoreCase)) cfg.HotkeyPaste = val;
+                        else if (key.Equals("Slot1Name", StringComparison.OrdinalIgnoreCase)) cfg.DeviceSlots[0] = val;
+                        else if (key.Equals("Slot2Name", StringComparison.OrdinalIgnoreCase)) cfg.DeviceSlots[1] = val;
+                        else if (key.Equals("Slot3Name", StringComparison.OrdinalIgnoreCase)) cfg.DeviceSlots[2] = val;
+                        else if (key.Equals("Slot4Name", StringComparison.OrdinalIgnoreCase)) cfg.DeviceSlots[3] = val;
+                        else if (key.Equals("ActiveSlotIndex", StringComparison.OrdinalIgnoreCase)) int.TryParse(val, out cfg.ActiveSlotIndex);
+                    }
+                }
+            } catch { }
+            return cfg;
+        }
+
+        public void Save() {
+            try {
+                var sb = new StringBuilder();
+                sb.AppendLine("# EasyBlue Studio 2026 Configuration");
+                sb.AppendLine("PhoneEdge=" + PhoneEdge);
+                sb.AppendLine("EdgeTraversalEnabled=" + EdgeTraversalEnabled);
+                sb.AppendLine("EdgeBounceReturnEnabled=" + EdgeBounceReturnEnabled);
+                sb.AppendLine("MouseSpeed=" + MouseSpeed.ToString("0.0"));
+                sb.AppendLine("InputMode=" + InputMode);
+                sb.AppendLine("LedEnabled=" + LedEnabled);
+                sb.AppendLine("HotkeySwitch=" + HotkeySwitch);
+                sb.AppendLine("HotkeyReturn=" + HotkeyReturn);
+                sb.AppendLine("HotkeyDisconnect=" + HotkeyDisconnect);
+                sb.AppendLine("HotkeySlot1=" + HotkeySlot1);
+                sb.AppendLine("HotkeySlot2=" + HotkeySlot2);
+                sb.AppendLine("HotkeySlot3=" + HotkeySlot3);
+                sb.AppendLine("HotkeySlot4=" + HotkeySlot4);
+                sb.AppendLine("HotkeyPaste=" + HotkeyPaste);
+                sb.AppendLine("Slot1Name=" + DeviceSlots[0]);
+                sb.AppendLine("Slot2Name=" + DeviceSlots[1]);
+                sb.AppendLine("Slot3Name=" + DeviceSlots[2]);
+                sb.AppendLine("Slot4Name=" + DeviceSlots[3]);
+                sb.AppendLine("ActiveSlotIndex=" + ActiveSlotIndex);
+                File.WriteAllText(ConfigPath, sb.ToString(), Encoding.UTF8);
+            } catch { }
+        }
+    }
+
+    // =========================================================================
+    // LOW-LEVEL HID HARDWARE CONTROLLER (Direct Zaram EasyBlue Protocol)
+    // =========================================================================
+    public class EasyBlueHardware : IDisposable {
+        [DllImport("hid.dll", SetLastError = true)]
+        private static extern void HidD_GetHidGuid(out Guid hidGuid);
+
+        [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern IntPtr SetupDiGetClassDevs(ref Guid classGuid, string enumerator, IntPtr hwndParent, uint flags);
+
+        [DllImport("setupapi.dll", SetLastError = true)]
+        private static extern bool SetupDiEnumDeviceInterfaces(IntPtr deviceInfoSet, IntPtr deviceInfoData, ref Guid interfaceClassGuid, uint memberIndex, ref SP_DEVICE_INTERFACE_DATA deviceInterfaceData);
+
+        [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr deviceInfoSet, ref SP_DEVICE_INTERFACE_DATA deviceInterfaceData, IntPtr deviceInterfaceDetailData, uint deviceInterfaceDetailDataSize, ref uint requiredSize, IntPtr deviceInfoData);
+
+        [DllImport("setupapi.dll", SetLastError = true)]
+        private static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern IntPtr CreateFile(string lpFileName, uint dwDesiredAccess, uint dwShareMode, IntPtr lpSecurityAttributes, uint dwCreationDisposition, uint dwFlagsAndAttributes, IntPtr hTemplateFile);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("hid.dll", SetLastError = true)]
+        private static extern bool HidD_SetFeature(IntPtr hidDeviceObject, byte[] lpReportBuffer, int reportBufferLength);
+
+        [DllImport("hid.dll", SetLastError = true)]
+        private static extern bool HidD_GetFeature(IntPtr hidDeviceObject, byte[] lpReportBuffer, int reportBufferLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool WriteFile(IntPtr hFile, byte[] lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SP_DEVICE_INTERFACE_DATA {
+            public uint cbSize;
+            public Guid interfaceClassGuid;
+            public uint flags;
+            public IntPtr reserved;
+        }
+
+        private const uint DIGCF_PRESENT = 0x00000002;
+        private const uint DIGCF_DEVICEINTERFACE = 0x00000010;
+        private const uint GENERIC_READ = 0x80000000;
+        private const uint GENERIC_WRITE = 0x40000000;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint FILE_SHARE_WRITE = 0x00000002;
+        private const uint OPEN_EXISTING = 3;
+
+        private IntPtr _hidHandle = IntPtr.Zero;
+        private bool _isConnected = false;
+        private bool _isPureHidMode = false;
+        private string _devicePath = null;
+
+        public bool IsConnected { get { return _isConnected; } }
+        public bool IsPureHidMode { get { return _isPureHidMode; } }
+        public string DevicePath { get { return _devicePath; } }
+
+        public bool Connect() {
+            Close();
+            Guid hidGuid;
+            HidD_GetHidGuid(out hidGuid);
+            IntPtr devInfo = SetupDiGetClassDevs(ref hidGuid, null, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+            if (devInfo == (IntPtr)(-1)) return false;
+
+            try {
+                SP_DEVICE_INTERFACE_DATA ifData = new SP_DEVICE_INTERFACE_DATA();
+                ifData.cbSize = (uint)Marshal.SizeOf(ifData);
+
+                for (uint i = 0; SetupDiEnumDeviceInterfaces(devInfo, IntPtr.Zero, ref hidGuid, i, ref ifData); i++) {
+                    uint reqSize = 0;
+                    SetupDiGetDeviceInterfaceDetail(devInfo, ref ifData, IntPtr.Zero, 0, ref reqSize, IntPtr.Zero);
+                    if (reqSize == 0) continue;
+
+                    IntPtr detailData = Marshal.AllocHGlobal((int)reqSize);
+                    try {
+                        Marshal.WriteInt32(detailData, IntPtr.Size == 8 ? 8 : 5);
+                        if (SetupDiGetDeviceInterfaceDetail(devInfo, ref ifData, detailData, reqSize, ref reqSize, IntPtr.Zero)) {
+                            IntPtr pDevicePath = new IntPtr(detailData.ToInt64() + 4);
+                            string path = Marshal.PtrToStringAuto(pDevicePath);
+                            if (path != null && path.IndexOf("vid_1d54&pid_b002", StringComparison.OrdinalIgnoreCase) >= 0) {
+                                // Match found! Check if vendor HID
+                                IntPtr handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+                                if (handle != IntPtr.Zero && handle != (IntPtr)(-1)) {
+                                    _hidHandle = handle;
+                                    _devicePath = path;
+                                    _isConnected = true;
+                                    CheckSecurityDrives();
+                                    return true;
+                                }
+                            }
+                        }
+                    } finally {
+                        Marshal.FreeHGlobal(detailData);
+                    }
+                }
+            } finally {
+                SetupDiDestroyDeviceInfoList(devInfo);
+            }
+
+            _isConnected = false;
+            return false;
+        }
+
+        private void CheckSecurityDrives() {
+            // If D:\ or any removable drive label "EasyBlue" or "EBTiny" does not exist, it is Pure HID Security PC Mode!
+            _isPureHidMode = true;
+            try {
+                foreach (var drive in DriveInfo.GetDrives()) {
+                    if (drive.IsReady && drive.DriveType == DriveType.Removable) {
+                        if (drive.VolumeLabel.IndexOf("Easy", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            drive.VolumeLabel.IndexOf("EBTiny", StringComparison.OrdinalIgnoreCase) >= 0) {
+                            _isPureHidMode = false;
+                            break;
+                        }
+                    }
+                }
+            } catch { }
+        }
+
+        // Send EasyBlue 0x2ABF Feature Command
+        public bool SendCommand(ushort cmdCode, ushort subParam, byte[] extraData) {
+            if (_hidHandle == IntPtr.Zero) return false;
+
+            // EasyBlue Feature Report: 65 bytes (1-byte Report ID 0x00 + 64-byte payload)
+            // Header: 0xBF, 0x2A (magic), length, cmdCode, subParam
+            byte[] packet = new byte[65];
+            packet[0] = 0x00; // Report ID
+            packet[1] = 0xBF; // Magic little-endian
+            packet[2] = 0x2A;
+            packet[3] = 0x00;
+            packet[4] = 0x00;
+            packet[5] = (byte)(cmdCode & 0xFF);
+            packet[6] = (byte)((cmdCode >> 8) & 0xFF);
+            packet[7] = (byte)(subParam & 0xFF);
+            packet[8] = (byte)((subParam >> 8) & 0xFF);
+
+            if (extraData != null && extraData.Length > 0) {
+                int copyLen = Math.Min(extraData.Length, 55);
+                Array.Copy(extraData, 0, packet, 9, copyLen);
+            }
+
+            bool ok = HidD_SetFeature(_hidHandle, packet, packet.Length);
+            if (!ok) {
+                // Fallback to WriteFile
+                uint written;
+                ok = WriteFile(_hidHandle, packet, (uint)packet.Length, out written, IntPtr.Zero);
+            }
+            return ok;
+        }
+
+        // 1. Enter Pairing Standby Mode (페어링 대기)
+        public bool EnterPairingMode() {
+            // 0x8300 with param 0x0002
+            return SendCommand(0x8300, 0x0002, null);
+        }
+
+        // 2. Select Paired Device Slot (1~4)
+        public bool SelectDeviceSlot(int slotIndex) {
+            // slotIndex: 0, 1, 2, 3 -> command 0x8310 with param (slotIndex)
+            byte[] slotData = new byte[] { (byte)slotIndex };
+            return SendCommand(0x8310, (ushort)slotIndex, slotData);
+        }
+
+        // 3. Disconnect Active Bluetooth Session
+        public bool DisconnectDevice() {
+            // 0x8100 with param 0x0002
+            return SendCommand(0x8100, 0x0002, null);
+        }
+
+        // 4. Hardware LED Control (On / Off)
+        public bool SetLed(bool on) {
+            // 0x0011 with param (on ? 1 : 0)
+            return SendCommand(0x0011, (ushort)(on ? 1 : 0), null);
+        }
+
+        // 5. Clear All Pairing Information
+        public bool ClearPairings() {
+            return SendCommand(0x8200, 0x0000, null);
+        }
+
+        // 6. Set Device Input Mode (0: Combo, 1: Keyboard, 2: Mouse)
+        public bool SetInputMode(int mode) {
+            return SendCommand(0x8021, (ushort)mode, null);
+        }
+
+        // 7. Send Mouse Move / Click to Mobile
+        public bool SendMouseReport(byte buttons, sbyte dx, sbyte dy, sbyte wheel) {
+            if (_hidHandle == IntPtr.Zero) return false;
+            byte[] report = new byte[9];
+            report[0] = 0x02; // Mouse Report ID
+            report[1] = buttons;
+            report[2] = (byte)dx;
+            report[3] = (byte)dy;
+            report[4] = (byte)wheel;
+            uint written;
+            return WriteFile(_hidHandle, report, (uint)report.Length, out written, IntPtr.Zero);
+        }
+
+        // 8. Send Keyboard Keystroke to Mobile
+        public bool SendKeyboardReport(byte modifier, byte[] keycodes) {
+            if (_hidHandle == IntPtr.Zero) return false;
+            byte[] report = new byte[9];
+            report[0] = 0x01; // Keyboard Report ID
+            report[1] = modifier;
+            report[2] = 0x00; // Reserved
+            if (keycodes != null) {
+                for (int i = 0; i < Math.Min(keycodes.Length, 6); i++) {
+                    report[3 + i] = keycodes[i];
+                }
+            }
+            uint written;
+            return WriteFile(_hidHandle, report, (uint)report.Length, out written, IntPtr.Zero);
+        }
+
+        public void Close() {
+            if (_hidHandle != IntPtr.Zero && _hidHandle != (IntPtr)(-1)) {
+                try { CloseHandle(_hidHandle); } catch { }
+                _hidHandle = IntPtr.Zero;
+            }
+            _isConnected = false;
+        }
+
+        public void Dispose() {
+            Close();
+        }
+    }
+
+    // =========================================================================
+    // GLOBAL INPUT HOOK & PC <-> MOBILE CONTROLLER
+    // =========================================================================
+    public class EasyBlueInputHook : IDisposable {
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelProc lpfn, IntPtr hMod, uint dwThreadId);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetCursorPos(int x, int y);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT { public int x; public int y; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MSLLHOOKSTRUCT {
+            public POINT pt;
+            public uint mouseData;
+            public uint flags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct KBDLLHOOKSTRUCT {
+            public uint vkCode;
+            public uint scanCode;
+            public uint flags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        private delegate IntPtr LowLevelProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        private const int WH_KEYBOARD_LL = 13;
+        private const int WH_MOUSE_LL = 14;
+
+        private const int WM_KEYDOWN = 0x0100;
+        private const int WM_KEYUP = 0x0101;
+        private const int WM_SYSKEYDOWN = 0x0104;
+        private const int WM_SYSKEYUP = 0x0105;
+
+        private const int WM_MOUSEMOVE = 0x0200;
+        private const int WM_LBUTTONDOWN = 0x0201;
+        private const int WM_LBUTTONUP = 0x0202;
+        private const int WM_RBUTTONDOWN = 0x0204;
+        private const int WM_RBUTTONUP = 0x0205;
+        private const int WM_MBUTTONDOWN = 0x0207;
+        private const int WM_MBUTTONUP = 0x0208;
+        private const int WM_MOUSEWHEEL = 0x020A;
+
+        private LowLevelProc _mouseDelegate;
+        private LowLevelProc _keyboardDelegate;
+        private IntPtr _mouseHook = IntPtr.Zero;
+        private IntPtr _keyboardHook = IntPtr.Zero;
+
+        private bool _isMobileActive = false;
+        private POINT _lastMousePos;
+        private int _escCount = 0;
+        private DateTime _lastEscTime = DateTime.MinValue;
+
+        public bool IsMobileActive { get { return _isMobileActive; } }
+
+        public event Action<bool> OnModeChanged; // true: Mobile, false: PC
+        public event Action<string> OnHotkeyTriggered;
+
+        private StudioConfig _config;
+        private EasyBlueHardware _hardware;
+
+        public EasyBlueInputHook(StudioConfig config, EasyBlueHardware hw) {
+            _config = config;
+            _hardware = hw;
+        }
+
+        public void Install() {
+            Uninstall();
+            _mouseDelegate = MouseHookCallback;
+            _keyboardDelegate = KeyboardHookCallback;
+
+            using (var curProcess = Process.GetCurrentProcess())
+            using (var curModule = curProcess.MainModule) {
+                IntPtr hMod = GetModuleHandle(curModule.ModuleName);
+                _keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardDelegate, hMod, 0);
+                _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _mouseDelegate, hMod, 0);
+            }
+        }
+
+        public void SwitchToMobile() {
+            if (_isMobileActive) return;
+            _isMobileActive = true;
+            GetCursorPos(out _lastMousePos);
+            if (OnModeChanged != null) OnModeChanged(true);
+        }
+
+        public void SwitchToPC() {
+            if (!_isMobileActive) return;
+            _isMobileActive = false;
+            // Restore cursor slightly inside boundary
+            SetCursorPos(_lastMousePos.x, _lastMousePos.y);
+            if (OnModeChanged != null) OnModeChanged(false);
+        }
+
+        public void ToggleMode() {
+            if (_isMobileActive) SwitchToPC();
+            else SwitchToMobile();
+        }
+
+        private bool CheckHotkeyDown(string hotkeyStr, uint currentVk) {
+            if (string.IsNullOrEmpty(hotkeyStr)) return false;
+            string[] parts = hotkeyStr.Split('+');
+            bool reqCtrl = false, reqAlt = false, reqShift = false;
+            string keyPart = "";
+
+            foreach (var p in parts) {
+                string part = p.Trim();
+                if (part.Equals("Ctrl", StringComparison.OrdinalIgnoreCase)) reqCtrl = true;
+                else if (part.Equals("Alt", StringComparison.OrdinalIgnoreCase)) reqAlt = true;
+                else if (part.Equals("Shift", StringComparison.OrdinalIgnoreCase)) reqShift = true;
+                else keyPart = part;
+            }
+
+            bool ctrlDown = (GetAsyncKeyState(0x11) & 0x8000) != 0;
+            bool altDown = (GetAsyncKeyState(0x12) & 0x8000) != 0;
+            bool shiftDown = (GetAsyncKeyState(0x10) & 0x8000) != 0;
+
+            if (reqCtrl != ctrlDown || reqAlt != altDown || reqShift != shiftDown) return false;
+
+            // Match keyPart with currentVk
+            if (string.IsNullOrEmpty(keyPart)) return false;
+            if (keyPart.Equals("Right", StringComparison.OrdinalIgnoreCase) && currentVk == 0x27) return true;
+            if (keyPart.Equals("Left", StringComparison.OrdinalIgnoreCase) && currentVk == 0x25) return true;
+            if (keyPart.Equals("Up", StringComparison.OrdinalIgnoreCase) && currentVk == 0x26) return true;
+            if (keyPart.Equals("Down", StringComparison.OrdinalIgnoreCase) && currentVk == 0x28) return true;
+            if (keyPart.Equals("End", StringComparison.OrdinalIgnoreCase) && currentVk == 0x23) return true;
+            if (keyPart.Equals("ScrollLock", StringComparison.OrdinalIgnoreCase) && currentVk == 0x91) return true;
+            if (keyPart.Equals("Pause", StringComparison.OrdinalIgnoreCase) && currentVk == 0x13) return true;
+            if (keyPart.StartsWith("F", StringComparison.OrdinalIgnoreCase)) {
+                int fNum;
+                if (int.TryParse(keyPart.Substring(1), out fNum) && fNum >= 1 && fNum <= 12) {
+                    if (currentVk == (uint)(0x6F + fNum)) return true;
+                }
+            }
+            if (keyPart.Length == 1 && ((char)currentVk == char.ToUpper(keyPart[0]))) return true;
+
+            return false;
+        }
+
+        private IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
+            if (nCode >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN)) {
+                KBDLLHOOKSTRUCT kbd = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
+
+                // Emergency Return: ESC 3 times within 1.5 seconds OR Pause/Break
+                if (kbd.vkCode == 0x1B) { // ESC
+                    if ((DateTime.Now - _lastEscTime).TotalSeconds < 1.5) {
+                        _escCount++;
+                        if (_escCount >= 3) {
+                            _escCount = 0;
+                            SwitchToPC();
+                            return (IntPtr)1;
+                        }
+                    } else {
+                        _escCount = 1;
+                    }
+                    _lastEscTime = DateTime.Now;
+                } else if (kbd.vkCode == 0x13) { // Pause / Break
+                    SwitchToPC();
+                    return (IntPtr)1;
+                }
+
+                // Check Configured Hotkeys
+                if (CheckHotkeyDown(_config.HotkeySwitch, kbd.vkCode)) {
+                    ToggleMode();
+                    return (IntPtr)1;
+                }
+                if (CheckHotkeyDown(_config.HotkeyReturn, kbd.vkCode)) {
+                    SwitchToPC();
+                    return (IntPtr)1;
+                }
+                if (CheckHotkeyDown(_config.HotkeyDisconnect, kbd.vkCode)) {
+                    if (OnHotkeyTriggered != null) OnHotkeyTriggered("DISCONNECT");
+                    return (IntPtr)1;
+                }
+                if (CheckHotkeyDown(_config.HotkeySlot1, kbd.vkCode)) {
+                    if (OnHotkeyTriggered != null) OnHotkeyTriggered("SLOT_1");
+                    return (IntPtr)1;
+                }
+                if (CheckHotkeyDown(_config.HotkeySlot2, kbd.vkCode)) {
+                    if (OnHotkeyTriggered != null) OnHotkeyTriggered("SLOT_2");
+                    return (IntPtr)1;
+                }
+                if (CheckHotkeyDown(_config.HotkeySlot3, kbd.vkCode)) {
+                    if (OnHotkeyTriggered != null) OnHotkeyTriggered("SLOT_3");
+                    return (IntPtr)1;
+                }
+                if (CheckHotkeyDown(_config.HotkeySlot4, kbd.vkCode)) {
+                    if (OnHotkeyTriggered != null) OnHotkeyTriggered("SLOT_4");
+                    return (IntPtr)1;
+                }
+                if (CheckHotkeyDown(_config.HotkeyPaste, kbd.vkCode)) {
+                    if (OnHotkeyTriggered != null) OnHotkeyTriggered("PASTE");
+                    return (IntPtr)1;
+                }
+
+                // If currently controlling mobile, forward keys to dongle & suppress local Windows
+                if (_isMobileActive) {
+                    byte mod = 0;
+                    if ((GetAsyncKeyState(0x11) & 0x8000) != 0) mod |= 0x01; // Ctrl
+                    if ((GetAsyncKeyState(0x10) & 0x8000) != 0) mod |= 0x02; // Shift
+                    if ((GetAsyncKeyState(0x12) & 0x8000) != 0) mod |= 0x04; // Alt
+                    if ((GetAsyncKeyState(0x5B) & 0x8000) != 0) mod |= 0x08; // Win
+
+                    byte hidCode = ConvertVkToHid((byte)kbd.vkCode);
+                    if (hidCode != 0) {
+                        _hardware.SendKeyboardReport(mod, new byte[] { hidCode });
+                    }
+                    return (IntPtr)1; // Block local Windows processing
+                }
+            } else if (nCode >= 0 && (wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP)) {
+                if (_isMobileActive) {
+                    // Send key release report
+                    _hardware.SendKeyboardReport(0, new byte[] { 0 });
+                    return (IntPtr)1;
+                }
+            }
+
+            return CallNextHookEx(_keyboardHook, nCode, wParam, lParam);
+        }
+
+        private IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
+            if (nCode >= 0) {
+                MSLLHOOKSTRUCT ms = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
+
+                if (!_isMobileActive) {
+                    // PC Mode: Check edge boundary traversal to Mobile
+                    if (_config.EdgeTraversalEnabled && wParam == (IntPtr)WM_MOUSEMOVE) {
+                        double screenRight = SystemParameters.VirtualScreenWidth - 2;
+                        double screenLeft = SystemParameters.VirtualScreenLeft + 2;
+                        double screenTop = SystemParameters.VirtualScreenTop + 2;
+                        double screenBottom = SystemParameters.VirtualScreenHeight - 2;
+
+                        bool crossEdge = false;
+                        if (_config.PhoneEdge == "Right" && ms.pt.x >= screenRight) crossEdge = true;
+                        else if (_config.PhoneEdge == "Left" && ms.pt.x <= screenLeft) crossEdge = true;
+                        else if (_config.PhoneEdge == "Top" && ms.pt.y <= screenTop) crossEdge = true;
+                        else if (_config.PhoneEdge == "Bottom" && ms.pt.y >= screenBottom) crossEdge = true;
+
+                        if (crossEdge) {
+                            SwitchToMobile();
+                            return (IntPtr)1;
+                        }
+                    }
+                } else {
+                    // Mobile Mode: Mouse is controlling Mobile!
+                    // 1. Mouse Edge Bounce Return to PC:
+                    if (_config.EdgeBounceReturnEnabled && wParam == (IntPtr)WM_MOUSEMOVE) {
+                        int dx = ms.pt.x - _lastMousePos.x;
+                        int dy = ms.pt.y - _lastMousePos.y;
+
+                        // Check if moving backwards towards PC
+                        bool returnBounce = false;
+                        if (_config.PhoneEdge == "Right" && dx < -35) returnBounce = true;
+                        else if (_config.PhoneEdge == "Left" && dx > 35) returnBounce = true;
+                        else if (_config.PhoneEdge == "Top" && dy > 35) returnBounce = true;
+                        else if (_config.PhoneEdge == "Bottom" && dy < -35) returnBounce = true;
+
+                        if (returnBounce) {
+                            SwitchToPC();
+                            return (IntPtr)1;
+                        }
+                    }
+
+                    // 2. Transmit delta to Mobile
+                    if (wParam == (IntPtr)WM_MOUSEMOVE) {
+                        int rawDx = (int)((ms.pt.x - _lastMousePos.x) * _config.MouseSpeed);
+                        int rawDy = (int)((ms.pt.y - _lastMousePos.y) * _config.MouseSpeed);
+
+                        sbyte sDx = (sbyte)Math.Max(-127, Math.Min(127, rawDx));
+                        sbyte sDy = (sbyte)Math.Max(-127, Math.Min(127, rawDy));
+
+                        _hardware.SendMouseReport(0, sDx, sDy, 0);
+
+                        // Park cursor at screen boundary so it stays in place
+                        SetCursorPos(_lastMousePos.x, _lastMousePos.y);
+                        return (IntPtr)1;
+                    } else if (wParam == (IntPtr)WM_LBUTTONDOWN) {
+                        _hardware.SendMouseReport(0x01, 0, 0, 0);
+                        return (IntPtr)1;
+                    } else if (wParam == (IntPtr)WM_LBUTTONUP) {
+                        _hardware.SendMouseReport(0x00, 0, 0, 0);
+                        return (IntPtr)1;
+                    } else if (wParam == (IntPtr)WM_RBUTTONDOWN) {
+                        _hardware.SendMouseReport(0x02, 0, 0, 0);
+                        return (IntPtr)1;
+                    } else if (wParam == (IntPtr)WM_RBUTTONUP) {
+                        _hardware.SendMouseReport(0x00, 0, 0, 0);
+                        return (IntPtr)1;
+                    } else if (wParam == (IntPtr)WM_MOUSEWHEEL) {
+                        short wheelDelta = (short)((ms.mouseData >> 16) & 0xFFFF);
+                        sbyte w = (sbyte)(wheelDelta > 0 ? 1 : -1);
+                        _hardware.SendMouseReport(0, 0, 0, w);
+                        return (IntPtr)1;
+                    }
+                }
+            }
+
+            return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+        }
+
+        private byte ConvertVkToHid(byte vk) {
+            // Standard VK to USB HID Usage mapping
+            if (vk >= 0x41 && vk <= 0x5A) return (byte)(0x04 + (vk - 0x41)); // A-Z (0x04 - 0x1D)
+            if (vk >= 0x31 && vk <= 0x39) return (byte)(0x1E + (vk - 0x31)); // 1-9 (0x1E - 0x26)
+            if (vk == 0x30) return 0x27; // 0
+            if (vk == 0x0D) return 0x28; // Enter
+            if (vk == 0x1B) return 0x29; // Escape
+            if (vk == 0x08) return 0x2A; // Backspace
+            if (vk == 0x09) return 0x2B; // Tab
+            if (vk == 0x20) return 0x2C; // Space
+            if (vk >= 0x70 && vk <= 0x7B) return (byte)(0x3A + (vk - 0x70)); // F1-F12
+            if (vk == 0x27) return 0x4F; // Right
+            if (vk == 0x25) return 0x50; // Left
+            if (vk == 0x28) return 0x51; // Down
+            if (vk == 0x26) return 0x52; // Up
+            if (vk == 0x15) return 0x90; // Hangul / Kana toggle
+            return 0x00;
+        }
+
+        public void Uninstall() {
+            if (_keyboardHook != IntPtr.Zero) {
+                UnhookWindowsHookEx(_keyboardHook);
+                _keyboardHook = IntPtr.Zero;
+            }
+            if (_mouseHook != IntPtr.Zero) {
+                UnhookWindowsHookEx(_mouseHook);
+                _mouseHook = IntPtr.Zero;
+            }
+        }
+
+        public void Dispose() {
+            Uninstall();
+        }
+    }
+
+    // =========================================================================
+    // MAIN APPLICATION WINDOW
+    // =========================================================================
     public class MainWindow : Window {
-        // Colors & Theme (Windows 11 Dark Mica / Fluent Style)
+        // Theme Colors
         private static readonly Color BgDark = Color.FromRgb(24, 24, 28);
         private static readonly Color CardBg = Color.FromRgb(36, 36, 44);
         private static readonly Color CardBgHover = Color.FromRgb(48, 48, 58);
@@ -46,11 +745,11 @@ namespace EasyBlueStudio {
         private static readonly Color WarningYellow = Color.FromRgb(241, 196, 15);
         private static readonly Color BorderColor = Color.FromRgb(55, 55, 68);
 
-        // Core Engine & Paths
-        private string _coreDir;
-        private string _ebExePath;
-        private Process _ebProcess;
-        private DispatcherTimer _statusTimer;
+        // Core Objects
+        private StudioConfig _config;
+        private EasyBlueHardware _hardware;
+        private EasyBlueInputHook _inputHook;
+        private DispatcherTimer _pollTimer;
 
         // UI Controls
         private Border _statusBadge;
@@ -59,49 +758,142 @@ namespace EasyBlueStudio {
         private Button[] _navButtons;
         private int _currentTabIndex = 0;
 
-        // State
-        private bool _isDeviceConnected = false;
-        private bool _isSecureMode = false;
-        private string _phoneEdgePosition = "Right"; // Left, Right, Top, Bottom
+        // Floating Mobile Indicator Bar (Top of Screen)
+        private Window _mobileIndicatorWindow;
+        private System.Windows.Forms.NotifyIcon _trayIcon;
+
+        // Visual Layout Canvas Elements
         private Canvas _layoutCanvas;
         private Border _phoneVisualCard;
         private TextBlock _phonePosLabel;
-        private System.Windows.Forms.NotifyIcon _trayIcon;
 
         public MainWindow() {
-            _coreDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "core");
-            _ebExePath = System.IO.Path.Combine(_coreDir, "EBTiny.exe");
+            _config = StudioConfig.Load();
+            _hardware = new EasyBlueHardware();
+            _inputHook = new EasyBlueInputHook(_config, _hardware);
+
+            _inputHook.OnModeChanged += (isMobile) => {
+                Dispatcher.Invoke(new Action(() => {
+                    UpdateMobileModeUI(isMobile);
+                }));
+            };
+
+            _inputHook.OnHotkeyTriggered += (action) => {
+                Dispatcher.Invoke(new Action(() => {
+                    HandleHotkeyAction(action);
+                }));
+            };
 
             InitializeWindow();
             BuildModernUI();
             InitializeTray();
-            ApplyWindows11DpiCompatibility();
-            EnsureCoreEngineRunning();
+            InitializeMobileIndicator();
 
-            _statusTimer = new DispatcherTimer();
-            _statusTimer.Interval = TimeSpan.FromSeconds(2.5);
-            _statusTimer.Tick += (s, e) => {
-                CheckHardware();
-                EnsureCoreEngineRunning();
+            _hardware.Connect();
+            _inputHook.Install();
+
+            _pollTimer = new DispatcherTimer();
+            _pollTimer.Interval = TimeSpan.FromSeconds(3);
+            _pollTimer.Tick += (s, e) => {
+                if (!_hardware.IsConnected) _hardware.Connect();
+                UpdateStatusBadge();
             };
-            _statusTimer.Start();
-            CheckHardware();
+            _pollTimer.Start();
+            UpdateStatusBadge();
         }
 
         private void InitializeWindow() {
             Title = "EasyBlue Studio 2026";
-            Width = 1000;
-            Height = 660;
-            MinWidth = 880;
-            MinHeight = 580;
+            Width = 1040;
+            Height = 690;
+            MinWidth = 900;
+            MinHeight = 600;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = new SolidColorBrush(BgDark);
             Foreground = new SolidColorBrush(TextPrimary);
             FontFamily = new FontFamily("Malgun Gothic, Segoe UI");
-
-            // Modern borderless window styling with custom title bar
             WindowStyle = WindowStyle.None;
             AllowsTransparency = false;
+        }
+
+        private void InitializeMobileIndicator() {
+            // Full-width subtle top neon bar when controlling mobile
+            _mobileIndicatorWindow = new Window {
+                WindowStyle = WindowStyle.None,
+                AllowsTransparency = true,
+                Background = Brushes.Transparent,
+                Topmost = true,
+                ShowInTaskbar = false,
+                Width = 460,
+                Height = 44,
+                Left = (SystemParameters.PrimaryScreenWidth - 460) / 2,
+                Top = 6
+            };
+
+            var border = new Border {
+                Background = new SolidColorBrush(Color.FromArgb(235, 20, 20, 26)),
+                BorderBrush = new SolidColorBrush(AccentCyan),
+                BorderThickness = new Thickness(1.5),
+                CornerRadius = new CornerRadius(22),
+                Padding = new Thickness(16, 6, 16, 6),
+                Effect = new DropShadowEffect { BlurRadius = 16, Color = AccentCyan, Opacity = 0.6 }
+            };
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var statusTxt = new TextBlock {
+                Text = "📱 [모바일 제어 중] 복귀: " + _config.HotkeyReturn + " 또는 ESC",
+                FontWeight = FontWeights.Bold,
+                FontSize = 12,
+                Foreground = Brushes.White,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(statusTxt, 0);
+            grid.Children.Add(statusTxt);
+
+            var btnReturn = new Button {
+                Content = "🖥️ PC로 복귀",
+                Background = new SolidColorBrush(AccentBlue),
+                Foreground = Brushes.White,
+                FontWeight = FontWeights.Bold,
+                FontSize = 11,
+                Padding = new Thickness(10, 4, 10, 4),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            btnReturn.Click += (s, e) => _inputHook.SwitchToPC();
+            Grid.SetColumn(btnReturn, 1);
+            grid.Children.Add(btnReturn);
+
+            border.Child = grid;
+            _mobileIndicatorWindow.Content = border;
+        }
+
+        private void UpdateMobileModeUI(bool isMobile) {
+            if (isMobile) {
+                if (_mobileIndicatorWindow != null) _mobileIndicatorWindow.Show();
+                if (_trayIcon != null) _trayIcon.Text = "EasyBlue Studio (📱 모바일 제어 중)";
+            } else {
+                if (_mobileIndicatorWindow != null) _mobileIndicatorWindow.Hide();
+                if (_trayIcon != null) _trayIcon.Text = "EasyBlue Studio (🖥️ PC 제어 중)";
+            }
+        }
+
+        private void HandleHotkeyAction(string action) {
+            if (action == "DISCONNECT") {
+                _hardware.DisconnectDevice();
+                ShowTip("연결 끊기", "블루투스 연결을 해제했습니다.");
+            } else if (action.StartsWith("SLOT_")) {
+                int slot = int.Parse(action.Substring(5)) - 1;
+                _hardware.SelectDeviceSlot(slot);
+                _config.ActiveSlotIndex = slot;
+                _config.Save();
+                ShowTip("슬롯 전환", "디바이스 슬롯 " + (slot + 1) + " (" + _config.DeviceSlots[slot] + ") 번으로 전환했습니다.");
+            } else if (action == "PASTE") {
+                StreamClipboardToMobile();
+            }
         }
 
         private void BuildModernUI() {
@@ -133,8 +925,6 @@ namespace EasyBlueStudio {
             rootGrid.Children.Add(bodyGrid);
 
             Content = rootGrid;
-
-            // Load initial page (Device Layout)
             SwitchTab(0);
         }
 
@@ -155,7 +945,6 @@ namespace EasyBlueStudio {
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // Logo & Title
             var titlePanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             var logo = new TextBlock {
                 Text = "⚡ EasyBlue",
@@ -175,7 +964,6 @@ namespace EasyBlueStudio {
             Grid.SetColumn(titlePanel, 0);
             grid.Children.Add(titlePanel);
 
-            // Center Status Badge
             _statusBadge = new Border {
                 CornerRadius = new CornerRadius(12),
                 Padding = new Thickness(10, 4, 10, 4),
@@ -184,7 +972,7 @@ namespace EasyBlueStudio {
                 VerticalAlignment = VerticalAlignment.Center
             };
             _statusBadgeText = new TextBlock {
-                Text = "● 동글 감지 중...",
+                Text = "🔍 동글 감지 중...",
                 FontSize = 11.5,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(TextSecondary)
@@ -193,18 +981,12 @@ namespace EasyBlueStudio {
             Grid.SetColumn(_statusBadge, 1);
             grid.Children.Add(_statusBadge);
 
-            // Window Controls (Minimize, Close)
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-
-            var btnMin = CreateIconBtn("─", () => WindowState = WindowState.Minimized);
+            var btnMin = CreateIconBtn("—", () => WindowState = WindowState.Minimized);
             var btnClose = CreateIconBtn("✕", () => {
-                // Minimize to tray instead of exit
-                Hide();
-                if (_trayIcon != null) {
-                    _trayIcon.ShowBalloonTip(1500, "EasyBlue Studio", "백그라운드 트레이에서 계속 실행 중입니다.", System.Windows.Forms.ToolTipIcon.Info);
-                }
+                _config.Save();
+                Hide(); // Minimize to tray
             });
-
             btnPanel.Children.Add(btnMin);
             btnPanel.Children.Add(btnClose);
             Grid.SetColumn(btnPanel, 2);
@@ -214,607 +996,499 @@ namespace EasyBlueStudio {
             return bar;
         }
 
+        private Button CreateIconBtn(string icon, Action onClick) {
+            var btn = new Button {
+                Content = icon,
+                Width = 36,
+                Height = 32,
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(TextSecondary),
+                BorderThickness = new Thickness(0),
+                FontSize = 13,
+                Cursor = Cursors.Hand
+            };
+            btn.Click += (s, e) => onClick();
+            return btn;
+        }
+
         private UIElement CreateSidebar() {
-            var panel = new Border {
+            var border = new Border {
                 Background = new SolidColorBrush(Color.FromRgb(28, 28, 34)),
                 BorderBrush = new SolidColorBrush(BorderColor),
                 BorderThickness = new Thickness(0, 0, 1, 0),
-                Padding = new Thickness(12, 16, 12, 16)
+                Padding = new Thickness(8, 16, 8, 16)
             };
 
             var stack = new StackPanel();
 
-            // Navigation Buttons
-            string[] tabs = new string[] {
-                "🖥️  화면 및 기기 배치",
-                "📋  스마트 클립보드",
-                "🎮  모바일 컨트롤 덱",
-                "🛡️  보안 PC & 진단",
-                "⚙️  설정 및 호환성"
+            string[] tabNames = new string[] {
+                "🖥️ 화면 배치 & 플로우",
+                "📶 페어링 & 장치 관리",
+                "⌨️ 단축키 설정",
+                "⚙️ 입력 & 환경 설정",
+                "🎮 모바일 리모컨 덱",
+                "🛡️ 보안 PC & 진단"
             };
 
-            _navButtons = new Button[tabs.Length];
-            for (int i = 0; i < tabs.Length; i++) {
-                int index = i;
+            _navButtons = new Button[tabNames.Length];
+            for (int i = 0; i < tabNames.Length; i++) {
+                int idx = i;
                 var btn = new Button {
-                    Content = tabs[i],
+                    Content = tabNames[i],
                     Height = 44,
                     Margin = new Thickness(0, 0, 0, 6),
-                    FontSize = 13,
-                    FontWeight = FontWeights.SemiBold,
+                    Padding = new Thickness(14, 0, 14, 0),
                     HorizontalContentAlignment = HorizontalAlignment.Left,
-                    Padding = new Thickness(16, 0, 0, 0),
-                    Cursor = Cursors.Hand,
-                    Background = (i == 0) ? new SolidColorBrush(AccentBlue) : Brushes.Transparent,
-                    Foreground = (i == 0) ? Brushes.White : new SolidColorBrush(TextSecondary),
-                    BorderThickness = new Thickness(0)
+                    Background = Brushes.Transparent,
+                    Foreground = new SolidColorBrush(i == 0 ? AccentCyan : TextSecondary),
+                    FontWeight = i == 0 ? FontWeights.Bold : FontWeights.Normal,
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand
                 };
-
-                btn.Click += (s, e) => SwitchTab(index);
+                btn.Click += (s, e) => SwitchTab(idx);
                 _navButtons[i] = btn;
                 stack.Children.Add(btn);
             }
 
-            // Quick Device Switch Cards at bottom of sidebar
-            var spacer = new Border { Height = 40 };
-            stack.Children.Add(spacer);
-
-            var devTitle = new TextBlock {
-                Text = "빠른 단말 전환",
+            // Direct Switch Test Button at bottom of sidebar
+            var toggleCard = new Border {
+                Margin = new Thickness(0, 24, 0, 0),
+                Background = new SolidColorBrush(CardBg),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12)
+            };
+            var toggleStack = new StackPanel();
+            toggleStack.Children.Add(new TextBlock {
+                Text = "빠른 입력 전환",
                 FontSize = 11,
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(TextSecondary),
-                Margin = new Thickness(8, 0, 0, 8)
-            };
-            stack.Children.Add(devTitle);
+                Margin = new Thickness(0, 0, 0, 8)
+            });
 
-            var devGrid = new Grid();
-            devGrid.ColumnDefinitions.Add(new ColumnDefinition());
-            devGrid.ColumnDefinitions.Add(new ColumnDefinition());
-            devGrid.RowDefinitions.Add(new RowDefinition());
-            devGrid.RowDefinitions.Add(new RowDefinition());
-
-            for (int i = 1; i <= 4; i++) {
-                int devId = i;
-                var dBtn = new Button {
-                    Content = "단말 " + i + "\n(Ctrl+F" + i + ")",
-                    Height = 42,
-                    Margin = new Thickness(2),
-                    FontSize = 10.5,
-                    Background = new SolidColorBrush(CardBg),
-                    Foreground = new SolidColorBrush(TextPrimary),
-                    BorderBrush = new SolidColorBrush(BorderColor),
-                    BorderThickness = new Thickness(1),
-                    Cursor = Cursors.Hand
-                };
-                dBtn.Click += (s, e) => SwitchMobileDevice(devId);
-
-                Grid.SetColumn(dBtn, (i - 1) % 2);
-                Grid.SetRow(dBtn, (i - 1) / 2);
-                devGrid.Children.Add(dBtn);
-            }
-            stack.Children.Add(devGrid);
-
-            panel.Child = stack;
-            return panel;
-        }
-
-        private void SwitchTab(int index) {
-            _currentTabIndex = index;
-            for (int i = 0; i < _navButtons.Length; i++) {
-                if (i == index) {
-                    _navButtons[i].Background = new SolidColorBrush(AccentBlue);
-                    _navButtons[i].Foreground = Brushes.White;
-                } else {
-                    _navButtons[i].Background = Brushes.Transparent;
-                    _navButtons[i].Foreground = new SolidColorBrush(TextSecondary);
-                }
-            }
-
-            switch (index) {
-                case 0: _mainContentArea.Content = CreateLayoutView(); break;
-                case 1: _mainContentArea.Content = CreateClipboardView(); break;
-                case 2: _mainContentArea.Content = CreateControlDeckView(); break;
-                case 3: _mainContentArea.Content = CreateSecurityDiagnosticsView(); break;
-                case 4: _mainContentArea.Content = CreateSettingsView(); break;
-            }
-        }
-
-        // ==========================================
-        // TAB 1: INTERACTIVE VIRTUAL LAYOUT CANVAS
-        // ==========================================
-        private UIElement CreateLayoutView() {
-            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            var stack = new StackPanel { Margin = new Thickness(8, 16, 8, 16) };
-
-            var header = new TextBlock {
-                Text = "🖥️ 디바이스 가상 배치 (Logitech Flow / Universal Control 스타일)",
-                FontSize = 17,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White,
-                Margin = new Thickness(0, 0, 0, 4)
-            };
-            var desc = new TextBlock {
-                Text = "PC 모니터 화면 경계 어디로 마우스를 넘겼을 때 스마트폰으로 전환될지 시각적으로 지정합니다.",
-                FontSize = 12.5,
-                Foreground = new SolidColorBrush(TextSecondary),
-                Margin = new Thickness(0, 0, 0, 16)
-            };
-            stack.Children.Add(header);
-            stack.Children.Add(desc);
-
-            // Visual Canvas Container
-            var canvasBorder = new Border {
-                Background = new SolidColorBrush(CardBg),
-                BorderBrush = new SolidColorBrush(BorderColor),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Height = 270,
-                ClipToBounds = true
-            };
-
-            _layoutCanvas = new Canvas {
-                Width = 680,
-                Height = 270,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-
-            // Main PC Monitor Card
-            var pcCard = new Border {
-                Width = 240,
-                Height = 150,
-                Background = new SolidColorBrush(Color.FromRgb(48, 52, 65)),
-                BorderBrush = new SolidColorBrush(AccentBlue),
-                BorderThickness = new Thickness(2),
-                CornerRadius = new CornerRadius(8)
-            };
-            var pcStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            pcStack.Children.Add(new TextBlock { Text = "💻 메인 PC 화면", FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center });
-            pcStack.Children.Add(new TextBlock { Text = string.Format("{0}x{1} (주 모니터)", (int)SystemParameters.PrimaryScreenWidth, (int)SystemParameters.PrimaryScreenHeight), FontSize = 11, Foreground = new SolidColorBrush(TextSecondary), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) });
-            pcCard.Child = pcStack;
-
-            Canvas.SetLeft(pcCard, 220);
-            Canvas.SetTop(pcCard, 60);
-            _layoutCanvas.Children.Add(pcCard);
-
-            // Smartphone Card
-            _phoneVisualCard = new Border {
-                Width = 110,
-                Height = 170,
-                Background = new SolidColorBrush(Color.FromRgb(26, 80, 130)),
-                BorderBrush = new SolidColorBrush(AccentCyan),
-                BorderThickness = new Thickness(2),
-                CornerRadius = new CornerRadius(14),
-                Cursor = Cursors.Hand
-            };
-            var phoneStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            phoneStack.Children.Add(new TextBlock { Text = "📱", FontSize = 28, HorizontalAlignment = HorizontalAlignment.Center });
-            phoneStack.Children.Add(new TextBlock { Text = "스마트폰", FontWeight = FontWeights.Bold, FontSize = 12, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center });
-            _phonePosLabel = new TextBlock { Text = "(오른쪽)", FontSize = 11, Foreground = new SolidColorBrush(AccentCyan), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) };
-            phoneStack.Children.Add(_phonePosLabel);
-            _phoneVisualCard.Child = phoneStack;
-
-            UpdatePhoneCanvasPosition();
-            _layoutCanvas.Children.Add(_phoneVisualCard);
-            canvasBorder.Child = _layoutCanvas;
-            stack.Children.Add(canvasBorder);
-
-            // Direction Selector Buttons
-            var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
-            btnRow.Children.Add(CreateDirButton("← 왼쪽으로 배치", "Left"));
-            btnRow.Children.Add(CreateDirButton("오른쪽으로 배치 →", "Right"));
-            btnRow.Children.Add(CreateDirButton("↑ 위쪽으로 배치", "Top"));
-            btnRow.Children.Add(CreateDirButton("↓ 아래쪽으로 배치", "Bottom"));
-            stack.Children.Add(btnRow);
-
-            // Sensitivity / Transition Control Cards
-            var optionCard = new Border {
-                Background = new SolidColorBrush(CardBg),
-                BorderBrush = new SolidColorBrush(BorderColor),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(16),
-                Margin = new Thickness(0, 16, 0, 0)
-            };
-            var optStack = new StackPanel();
-
-            var row1 = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-            var lbl1 = new TextBlock { Text = "화면 경계 이동 지연 (Edge Delay - 마우스 튕김 방지):", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
-            var slider1 = new Slider { Minimum = 0, Maximum = 500, Value = 100, Width = 180, VerticalAlignment = VerticalAlignment.Center };
-            var val1 = new TextBlock { Text = "100 ms", Foreground = new SolidColorBrush(AccentCyan), Width = 60, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-            slider1.ValueChanged += (s, e) => val1.Text = (int)slider1.Value + " ms";
-            row1.Children.Add(lbl1);
-            DockPanel.SetDock(val1, Dock.Right);
-            row1.Children.Add(val1);
-            DockPanel.SetDock(slider1, Dock.Right);
-            row1.Children.Add(slider1);
-            optStack.Children.Add(row1);
-
-            var row2 = new DockPanel();
-            var lbl2 = new TextBlock { Text = "마우스 커서 가장자리 감도 (Trigger Zone):", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
-            var slider2 = new Slider { Minimum = 1, Maximum = 10, Value = 5, Width = 180, VerticalAlignment = VerticalAlignment.Center };
-            var val2 = new TextBlock { Text = "5 px", Foreground = new SolidColorBrush(AccentCyan), Width = 60, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-            slider2.ValueChanged += (s, e) => val2.Text = (int)slider2.Value + " px";
-            row2.Children.Add(lbl2);
-            DockPanel.SetDock(val2, Dock.Right);
-            row2.Children.Add(val2);
-            DockPanel.SetDock(slider2, Dock.Right);
-            row2.Children.Add(slider2);
-            optStack.Children.Add(row2);
-
-            optionCard.Child = optStack;
-            stack.Children.Add(optionCard);
-
-            scroll.Content = stack;
-            return scroll;
-        }
-
-        private Button CreateDirButton(string text, string dir) {
-            var btn = new Button {
-                Content = text,
+            var btnQuickSwitch = new Button {
+                Content = "🔄 PC ↔ 모바일 전환",
                 Height = 36,
-                Margin = new Thickness(4, 0, 4, 0),
-                Padding = new Thickness(12, 0, 12, 0),
-                Background = (_phoneEdgePosition == dir) ? new SolidColorBrush(AccentBlue) : new SolidColorBrush(CardBg),
-                Foreground = Brushes.White,
-                BorderBrush = new SolidColorBrush(BorderColor),
-                BorderThickness = new Thickness(1),
-                Cursor = Cursors.Hand
-            };
-            btn.Click += (s, e) => {
-                _phoneEdgePosition = dir;
-                UpdatePhoneCanvasPosition();
-                _mainContentArea.Content = CreateLayoutView();
-            };
-            return btn;
-        }
-
-        private void UpdatePhoneCanvasPosition() {
-            if (_layoutCanvas == null || _phoneVisualCard == null) return;
-            switch (_phoneEdgePosition) {
-                case "Left":
-                    Canvas.SetLeft(_phoneVisualCard, 60);
-                    Canvas.SetTop(_phoneVisualCard, 50);
-                    _phonePosLabel.Text = "(왼쪽)";
-                    break;
-                case "Right":
-                    Canvas.SetLeft(_phoneVisualCard, 500);
-                    Canvas.SetTop(_phoneVisualCard, 50);
-                    _phonePosLabel.Text = "(오른쪽)";
-                    break;
-                case "Top":
-                    Canvas.SetLeft(_phoneVisualCard, 285);
-                    Canvas.SetTop(_phoneVisualCard, 0);
-                    _phonePosLabel.Text = "(위쪽)";
-                    break;
-                case "Bottom":
-                    Canvas.SetLeft(_phoneVisualCard, 285);
-                    Canvas.SetTop(_phoneVisualCard, 190);
-                    _phonePosLabel.Text = "(아래쪽)";
-                    break;
-            }
-        }
-
-        // ==========================================
-        // TAB 2: SMART CLIPBOARD & TEXT STREAMER
-        // ==========================================
-        private UIElement CreateClipboardView() {
-            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            var stack = new StackPanel { Margin = new Thickness(8, 16, 8, 16) };
-
-            var header = new TextBlock {
-                Text = "📋 스마트 클립보드 & 텍스트 스트리머",
-                FontSize = 17,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White,
-                Margin = new Thickness(0, 0, 0, 4)
-            };
-            var desc = new TextBlock {
-                Text = "한글 자모 분리('ㅎㅏㄴㄱㅡㄹ') 및 텍스트 누락 없는 스마트 모바일 타이핑 주입 허브입니다.",
-                FontSize = 12.5,
-                Foreground = new SolidColorBrush(TextSecondary),
-                Margin = new Thickness(0, 0, 0, 16)
-            };
-            stack.Children.Add(header);
-            stack.Children.Add(desc);
-
-            // Real-time Clipboard Preview Card
-            var clipPreviewCard = new Border {
-                Background = new SolidColorBrush(CardBg),
-                BorderBrush = new SolidColorBrush(BorderColor),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(14),
-                Margin = new Thickness(0, 0, 0, 16)
-            };
-            var cpStack = new StackPanel();
-            cpStack.Children.Add(new TextBlock { Text = "현재 PC 클립보드 복사 내용 미리보기", FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(AccentCyan), FontSize = 12, Margin = new Thickness(0, 0, 0, 6) });
-            string clipText = "(클립보드가 비어 있습니다)";
-            try {
-                if (Clipboard.ContainsText()) clipText = Clipboard.GetText();
-            } catch { }
-            var clipContent = new TextBlock {
-                Text = clipText,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                MaxHeight = 60,
-                Foreground = new SolidColorBrush(TextPrimary),
-                FontSize = 12
-            };
-            cpStack.Children.Add(clipContent);
-            clipPreviewCard.Child = cpStack;
-            stack.Children.Add(clipPreviewCard);
-
-            // Direct Mobile Text Injection Box
-            var inputTitle = new TextBlock { Text = "모바일로 바로 전송할 텍스트 (URL, 계좌번호, 장문, 코드 등):", FontWeight = FontWeights.Bold, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 6) };
-            stack.Children.Add(inputTitle);
-
-            var txtInput = new TextBox {
-                Height = 110,
-                AcceptsReturn = true,
-                TextWrapping = TextWrapping.Wrap,
-                Background = new SolidColorBrush(Color.FromRgb(28, 28, 35)),
-                Foreground = Brushes.White,
-                BorderBrush = new SolidColorBrush(BorderColor),
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(10),
-                FontSize = 13,
-                Margin = new Thickness(0, 0, 0, 12)
-            };
-            stack.Children.Add(txtInput);
-
-            // Action Buttons
-            var btnBar = new StackPanel { Orientation = Orientation.Horizontal };
-            var btnSend = new Button {
-                Content = "🚀 스마트폰으로 텍스트 주입 전송 (Ctrl + Enter)",
-                Height = 40,
-                Padding = new Thickness(20, 0, 20, 0),
                 Background = new SolidColorBrush(AccentBlue),
                 Foreground = Brushes.White,
                 FontWeight = FontWeights.Bold,
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
             };
-            btnSend.Click += (s, e) => {
-                if (!string.IsNullOrEmpty(txtInput.Text)) {
-                    StreamTextToPhone(txtInput.Text);
-                    txtInput.Clear();
-                } else {
-                    MessageBox.Show("전송할 텍스트를 입력해 주세요.", "알림", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            };
+            btnQuickSwitch.Click += (s, e) => _inputHook.ToggleMode();
+            toggleStack.Children.Add(btnQuickSwitch);
+            toggleCard.Child = toggleStack;
+            stack.Children.Add(toggleCard);
 
-            var btnPasteWin = new Button {
-                Content = "📋 이지블루 순정 붙여넣기 창 열기 (Ctrl+Alt+P)",
-                Height = 40,
-                Margin = new Thickness(12, 0, 0, 0),
-                Padding = new Thickness(16, 0, 16, 0),
-                Background = new SolidColorBrush(CardBgHover),
-                Foreground = Brushes.White,
+            border.Child = stack;
+            return border;
+        }
+
+        private void SwitchTab(int index) {
+            _currentTabIndex = index;
+            for (int i = 0; i < _navButtons.Length; i++) {
+                bool active = (i == index);
+                _navButtons[i].Foreground = new SolidColorBrush(active ? AccentCyan : TextSecondary);
+                _navButtons[i].FontWeight = active ? FontWeights.Bold : FontWeights.Normal;
+                _navButtons[i].Background = active ? new SolidColorBrush(Color.FromRgb(40, 42, 54)) : Brushes.Transparent;
+            }
+
+            switch (index) {
+                case 0: _mainContentArea.Content = BuildLayoutTab(); break;
+                case 1: _mainContentArea.Content = BuildPairingTab(); break;
+                case 2: _mainContentArea.Content = BuildHotkeysTab(); break;
+                case 3: _mainContentArea.Content = BuildPreferencesTab(); break;
+                case 4: _mainContentArea.Content = BuildRemoteDeckTab(); break;
+                case 5: _mainContentArea.Content = BuildDiagnosticsTab(); break;
+            }
+        }
+
+        // =========================================================================
+        // TAB 1: LAYOUT & UNIVERSAL FLOW CANVAS
+        // =========================================================================
+        private UIElement BuildLayoutTab() {
+            var root = new Grid();
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var header = new StackPanel { Margin = new Thickness(8, 16, 8, 12) };
+            header.Children.Add(new TextBlock {
+                Text = "🖥️ 다중 모니터 & 스마트폰 공간 배치",
+                FontSize = 18,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.White
+            });
+            header.Children.Add(new TextBlock {
+                Text = "스마트폰을 원하는 위치에 배치하세요. 마우스가 해당 모니터 가장자리를 넘어가면 자동으로 스마트폰으로 전환됩니다.",
+                FontSize = 12.5,
+                Foreground = new SolidColorBrush(TextSecondary),
+                Margin = new Thickness(0, 4, 0, 0)
+            });
+            Grid.SetRow(header, 0);
+            root.Children.Add(header);
+
+            // Canvas
+            var canvasBorder = new Border {
+                Background = new SolidColorBrush(CardBg),
                 BorderBrush = new SolidColorBrush(BorderColor),
                 BorderThickness = new Thickness(1),
-                Cursor = Cursors.Hand
+                CornerRadius = new CornerRadius(10),
+                ClipToBounds = true,
+                Margin = new Thickness(8, 0, 8, 12)
             };
-            btnPasteWin.Click += (s, e) => {
-                SendCtrlAltP();
-            };
+            _layoutCanvas = new Canvas();
+            canvasBorder.Child = _layoutCanvas;
+            Grid.SetRow(canvasBorder, 1);
+            root.Children.Add(canvasBorder);
 
-            btnBar.Children.Add(btnSend);
-            btnBar.Children.Add(btnPasteWin);
-            stack.Children.Add(btnBar);
+            _layoutCanvas.Loaded += (s, e) => RenderLayoutCanvas();
 
-            // IME Preset Info Card
-            var imeCard = new Border {
-                Background = new SolidColorBrush(CardBg),
+            // Bottom control bar
+            var bottomBar = new Border {
+                Background = new SolidColorBrush(Color.FromRgb(30, 30, 38)),
                 BorderBrush = new SolidColorBrush(BorderColor),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(14),
-                Margin = new Thickness(0, 20, 0, 0)
+                Padding = new Thickness(16, 12, 16, 12),
+                Margin = new Thickness(8, 0, 8, 8)
             };
-            var imeStack = new StackPanel();
-            imeStack.Children.Add(new TextBlock { Text = "💡 모바일 한/영 전환 팁", FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(AccentCyan), Margin = new Thickness(0, 0, 0, 6) });
-            imeStack.Children.Add(new TextBlock { Text = "• 삼성 갤럭시: Shift + Space 또는 기본 한/영 키로 전환", FontSize = 12, Foreground = new SolidColorBrush(TextSecondary) });
-            imeStack.Children.Add(new TextBlock { Text = "• 신형 안드로이드 / iOS (아이폰/아이패드): Win + Space 또는 CapsLock으로 전환", FontSize = 12, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 2, 0, 0) });
-            imeCard.Child = imeStack;
-            stack.Children.Add(imeCard);
+            var bottomGrid = new Grid();
+            bottomGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            bottomGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            scroll.Content = stack;
-            return scroll;
-        }
-
-        // ==========================================
-        // TAB 3: MOBILE REMOTE CONTROL DECK
-        // ==========================================
-        private UIElement CreateControlDeckView() {
-            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            var stack = new StackPanel { Margin = new Thickness(8, 16, 8, 16) };
-
-            var header = new TextBlock {
-                Text = "🎮 모바일 원격 컨트롤 덱 (Stream Deck 스타일)",
-                FontSize = 17,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White,
-                Margin = new Thickness(0, 0, 0, 4)
+            _phonePosLabel = new TextBlock {
+                Text = "현재 모바일 위치: " + _config.PhoneEdge + " (마우스 경계 자동 전환: " + (_config.EdgeTraversalEnabled ? "켜짐" : "꺼짐") + ")",
+                VerticalAlignment = VerticalAlignment.Center,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Brushes.White
             };
-            var desc = new TextBlock {
-                Text = "PC에서 원클릭으로 스마트폰 내비게이션, 홈 화면, 볼륨 및 미디어를 즉시 제어합니다.",
-                FontSize = 12.5,
-                Foreground = new SolidColorBrush(TextSecondary),
-                Margin = new Thickness(0, 0, 0, 16)
-            };
-            stack.Children.Add(header);
-            stack.Children.Add(desc);
+            Grid.SetColumn(_phonePosLabel, 0);
+            bottomGrid.Children.Add(_phonePosLabel);
 
-            // Deck Grid
-            var grid = new Grid();
-            for (int r = 0; r < 3; r++) grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(85) });
-            for (int c = 0; c < 4; c++) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            // Buttons matrix
-            var deckItems = new[] {
-                new { Icon = "🏠", Label = "홈 (Home)", Cmd = "HOME", Row = 0, Col = 0 },
-                new { Icon = "◀️", Label = "뒤로가기 (Back)", Cmd = "BACK", Row = 0, Col = 1 },
-                new { Icon = "🗂️", Label = "최근 앱 (Recent)", Cmd = "RECENTS", Row = 0, Col = 2 },
-                new { Icon = "🔒", Label = "화면 끄기 / 켜기", Cmd = "POWER", Row = 0, Col = 3 },
-
-                new { Icon = "🔊", Label = "볼륨 증가 (+)", Cmd = "VOL_UP", Row = 1, Col = 0 },
-                new { Icon = "🔉", Label = "볼륨 감소 (-)", Cmd = "VOL_DOWN", Row = 1, Col = 1 },
-                new { Icon = "🔇", Label = "음소거 (Mute)", Cmd = "MUTE", Row = 1, Col = 2 },
-                new { Icon = "📸", Label = "화면 캡처", Cmd = "SCREENSHOT", Row = 1, Col = 3 },
-
-                new { Icon = "⏮️", Label = "이전 곡", Cmd = "MEDIA_PREV", Row = 2, Col = 0 },
-                new { Icon = "⏯️", Label = "재생 / 일시정지", Cmd = "MEDIA_PLAY", Row = 2, Col = 1 },
-                new { Icon = "⏭️", Label = "다음 곡", Cmd = "MEDIA_NEXT", Row = 2, Col = 2 },
-                new { Icon = "🌐", Label = "한/영 토글", Cmd = "LANG_TOGGLE", Row = 2, Col = 3 }
-            };
-
-            foreach (var item in deckItems) {
+            var edgeBtnRow = new StackPanel { Orientation = Orientation.Horizontal };
+            string[] edges = new string[] { "Left", "Top", "Right", "Bottom" };
+            string[] edgeLabels = new string[] { "◀ 좌측", "▲ 상단", "우측 ▶", "▼ 하단" };
+            for (int i = 0; i < edges.Length; i++) {
+                string edge = edges[i];
                 var btn = new Button {
-                    Margin = new Thickness(4),
-                    Background = new SolidColorBrush(CardBg),
-                    BorderBrush = new SolidColorBrush(BorderColor),
-                    BorderThickness = new Thickness(1),
+                    Content = edgeLabels[i],
+                    Padding = new Thickness(12, 6, 12, 6),
+                    Margin = new Thickness(6, 0, 0, 0),
+                    Background = _config.PhoneEdge == edge ? new SolidColorBrush(AccentBlue) : new SolidColorBrush(CardBgHover),
+                    Foreground = Brushes.White,
+                    BorderThickness = new Thickness(0),
                     Cursor = Cursors.Hand
                 };
-                var p = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-                p.Children.Add(new TextBlock { Text = item.Icon, FontSize = 22, HorizontalAlignment = HorizontalAlignment.Center });
-                p.Children.Add(new TextBlock { Text = item.Label, FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(TextPrimary), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) });
-                btn.Content = p;
-
-                string cmd = item.Cmd;
-                btn.Click += (s, e) => ExecuteMobileDeckCommand(cmd);
-
-                Grid.SetRow(btn, item.Row);
-                Grid.SetColumn(btn, item.Col);
-                grid.Children.Add(btn);
+                btn.Click += (s, e) => {
+                    _config.PhoneEdge = edge;
+                    _config.Save();
+                    RenderLayoutCanvas();
+                    _phonePosLabel.Text = "현재 모바일 위치: " + _config.PhoneEdge + " (마우스 경계 자동 전환: " + (_config.EdgeTraversalEnabled ? "켜짐" : "꺼짐") + ")";
+                };
+                edgeBtnRow.Children.Add(btn);
             }
+            Grid.SetColumn(edgeBtnRow, 1);
+            bottomGrid.Children.Add(edgeBtnRow);
 
-            stack.Children.Add(grid);
-            scroll.Content = stack;
-            return scroll;
+            bottomBar.Child = bottomGrid;
+            Grid.SetRow(bottomBar, 2);
+            root.Children.Add(bottomBar);
+
+            return root;
         }
 
-        // ==========================================
-        // TAB 4: SECURITY PC & DIAGNOSTICS HUB
-        // ==========================================
-        private UIElement CreateSecurityDiagnosticsView() {
+        private void RenderLayoutCanvas() {
+            if (_layoutCanvas == null || _layoutCanvas.ActualWidth < 10) return;
+            _layoutCanvas.Children.Clear();
+
+            double cw = _layoutCanvas.ActualWidth;
+            double ch = _layoutCanvas.ActualHeight;
+
+            // PC Monitor Card (Center)
+            double pcW = 260, pcH = 160;
+            double pcX = (cw - pcW) / 2;
+            double pcY = (ch - pcH) / 2;
+
+            var pcCard = new Border {
+                Width = pcW,
+                Height = pcH,
+                Background = new SolidColorBrush(Color.FromRgb(48, 52, 65)),
+                BorderBrush = new SolidColorBrush(AccentBlue),
+                BorderThickness = new Thickness(2),
+                CornerRadius = new CornerRadius(10),
+                Effect = new DropShadowEffect { BlurRadius = 14, Color = Colors.Black, Opacity = 0.5 }
+            };
+            var pcStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            pcStack.Children.Add(new TextBlock { Text = "🖥️ 메인 PC 모니터", FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 14 });
+            pcStack.Children.Add(new TextBlock { Text = string.Format("{0} x {1}", (int)SystemParameters.PrimaryScreenWidth, (int)SystemParameters.PrimaryScreenHeight), Foreground = new SolidColorBrush(TextSecondary), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 11, Margin = new Thickness(0, 4, 0, 0) });
+            pcCard.Child = pcStack;
+
+            Canvas.SetLeft(pcCard, pcX);
+            Canvas.SetTop(pcCard, pcY);
+            _layoutCanvas.Children.Add(pcCard);
+
+            // Phone Visual Card
+            double phW = 110, phH = 170;
+            double phX = pcX + pcW + 36, phY = pcY - 5;
+            if (_config.PhoneEdge == "Left") phX = pcX - phW - 36;
+            else if (_config.PhoneEdge == "Top") { phX = pcX + (pcW - phW) / 2; phY = pcY - phH - 24; }
+            else if (_config.PhoneEdge == "Bottom") { phX = pcX + (pcW - phW) / 2; phY = pcY + pcH + 24; }
+
+            _phoneVisualCard = new Border {
+                Width = phW,
+                Height = phH,
+                Background = new SolidColorBrush(Color.FromRgb(22, 24, 30)),
+                BorderBrush = new SolidColorBrush(AccentCyan),
+                BorderThickness = new Thickness(2),
+                CornerRadius = new CornerRadius(18),
+                Effect = new DropShadowEffect { BlurRadius = 16, Color = AccentCyan, Opacity = 0.4 }
+            };
+            var phStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            phStack.Children.Add(new TextBlock { Text = "📱", FontSize = 28, HorizontalAlignment = HorizontalAlignment.Center });
+            phStack.Children.Add(new TextBlock { Text = _config.DeviceSlots[_config.ActiveSlotIndex], FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 11, Margin = new Thickness(0, 6, 0, 0) });
+            phStack.Children.Add(new TextBlock { Text = "Bluetooth Connected", Foreground = new SolidColorBrush(SuccessGreen), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 9 });
+            _phoneVisualCard.Child = phStack;
+
+            Canvas.SetLeft(_phoneVisualCard, phX);
+            Canvas.SetTop(_phoneVisualCard, phY);
+            _layoutCanvas.Children.Add(_phoneVisualCard);
+        }
+
+        // =========================================================================
+        // TAB 2: BLUETOOTH PAIRING & DEVICE MANAGEMENT
+        // =========================================================================
+        private UIElement BuildPairingTab() {
             var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             var stack = new StackPanel { Margin = new Thickness(8, 16, 8, 16) };
 
             var header = new TextBlock {
-                Text = "🛡️ 사내 보안 PC & 하드웨어 진단 허브",
-                FontSize = 17,
+                Text = "📶 블루투스 페어링 및 디바이스 슬롯 관리",
+                FontSize = 18,
                 FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White,
-                Margin = new Thickness(0, 0, 0, 4)
+                Foreground = Brushes.White
             };
             var desc = new TextBlock {
-                Text = "사내 보안 프로그램(DLP/매체제어) 차단 여부를 검사하고 펌웨어를 안전하게 관리합니다.",
+                Text = "새로운 스마트폰을 페어링하거나, 최대 4개의 등록된 기기 슬롯을 직접 선택하고 관리합니다.",
                 FontSize = 12.5,
                 Foreground = new SolidColorBrush(TextSecondary),
-                Margin = new Thickness(0, 0, 0, 16)
+                Margin = new Thickness(0, 4, 0, 16)
             };
             stack.Children.Add(header);
             stack.Children.Add(desc);
 
-            // Hardware Telemetry Card
-            var hwCard = new Border {
+            // 1. Pairing Mode Card
+            var pairCard = new Border {
                 Background = new SolidColorBrush(CardBg),
-                BorderBrush = new SolidColorBrush(BorderColor),
+                BorderBrush = new SolidColorBrush(AccentCyan),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(18),
                 Margin = new Thickness(0, 0, 0, 16)
             };
-            var hwStack = new StackPanel();
-            hwStack.Children.Add(new TextBlock { Text = "USB 동글 하드웨어 감지 상태", FontWeight = FontWeights.Bold, FontSize = 14, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 10) });
+            var pairGrid = new Grid();
+            pairGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            pairGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            string hwStatus = _isDeviceConnected ? (_isSecureMode ? "🟢 [보안PC 모드] 연결됨 - 가상 드라이브 완전 차단됨 (사내 DLP 안전)" : "🟡 [일반 모드] 연결됨 - 가상 드라이브(D:) 마운트됨") : "🔴 [미연결] USB 동글을 찾을 수 없습니다.";
-            var statusBox = new Border {
-                Background = new SolidColorBrush(_isSecureMode ? Color.FromRgb(15, 60, 40) : Color.FromRgb(40, 40, 50)),
-                BorderBrush = new SolidColorBrush(_isSecureMode ? SuccessGreen : BorderColor),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(12),
-                Margin = new Thickness(0, 0, 0, 10)
-            };
-            statusBox.Child = new TextBlock { Text = hwStatus, FontWeight = FontWeights.Bold, Foreground = _isSecureMode ? new SolidColorBrush(SuccessGreen) : Brushes.White, FontSize = 12.5 };
-            hwStack.Children.Add(statusBox);
+            var pairInfo = new StackPanel();
+            pairInfo.Children.Add(new TextBlock { Text = "새 디바이스 페어링 모드 (Pairing Standby)", FontWeight = FontWeights.Bold, FontSize = 14, Foreground = Brushes.White });
+            pairInfo.Children.Add(new TextBlock {
+                Text = "동글을 블루투스 검색 가능 상태로 전환합니다. 스마트폰의 블루투스 설정에서 'EasyBlue'를 검색하여 연결하세요.",
+                FontSize = 11.5,
+                Foreground = new SolidColorBrush(TextSecondary),
+                Margin = new Thickness(0, 4, 0, 0)
+            });
+            Grid.SetColumn(pairInfo, 0);
+            pairGrid.Children.Add(pairInfo);
 
-            hwStack.Children.Add(new TextBlock { Text = "• 장치 식별자: USB\\VID_1D54&PID_B002 (Zaram Smart BKM Switch)", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
-            hwStack.Children.Add(new TextBlock { Text = "• 통신 프로토콜: USB HID (UsagePage: 0xFFA0, Usage: 0x0001 - Driverless)", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 2, 0, 0) });
-            hwStack.Children.Add(new TextBlock { Text = "• 블루투스 칩셋: Broadcom BCM Series (안드로이드/iOS 무선 페어링)", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 2, 0, 0) });
-
-            hwCard.Child = hwStack;
-            stack.Children.Add(hwCard);
-
-            // Firmware Tools Button Group
-            var fwCard = new Border {
-                Background = new SolidColorBrush(CardBg),
-                BorderBrush = new SolidColorBrush(BorderColor),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(18)
-            };
-            var fwStack = new StackPanel();
-            fwStack.Children.Add(new TextBlock { Text = "펌웨어 전환 도구 (개인 PC에서 수행 권장)", FontWeight = FontWeights.Bold, FontSize = 14, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 8) });
-            fwStack.Children.Add(new TextBlock { Text = "사내 PC에서 쓸 수 있도록 동글의 외장 드라이브를 끄거나(보안PC용), 다시 원래대로 복구합니다.", FontSize = 12, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 0, 0, 12) });
-
-            var btnRow = new StackPanel { Orientation = Orientation.Horizontal };
-            var btnSec = new Button {
-                Content = "🛡️ [보안PC용 DSP-232 전환] 실행",
-                Height = 38,
-                Padding = new Thickness(16, 0, 16, 0),
-                Background = new SolidColorBrush(Color.FromRgb(20, 110, 180)),
+            var pairBtn = new Button {
+                Content = "⚡ 페어링 대기 모드 시작",
+                Height = 40,
+                Padding = new Thickness(18, 0, 18, 0),
+                Background = new SolidColorBrush(AccentBlue),
                 Foreground = Brushes.White,
                 FontWeight = FontWeights.Bold,
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
             };
-            btnSec.Click += (s, e) => LaunchFirmwareScript("[보안PC용_펌웨어_전환].bat");
+            pairBtn.Click += (s, e) => {
+                bool ok = _hardware.EnterPairingMode();
+                if (ok) {
+                    MessageBox.Show("이지블루 동글이 페어링 대기 모드로 진입했습니다.\n스마트폰의 블루투스 설정에서 'EasyBlue'를 검색하여 페어링하세요.", "페어링 대기", MessageBoxButton.OK, MessageBoxImage.Information);
+                } else {
+                    MessageBox.Show("동글과 통신할 수 없습니다. USB 연결 상태를 확인하세요.", "오류", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            };
+            Grid.SetColumn(pairBtn, 1);
+            pairGrid.Children.Add(pairBtn);
 
-            var btnNorm = new Button {
-                Content = "🔄 [일반용 DSP-220 복구] 실행",
-                Height = 38,
-                Margin = new Thickness(12, 0, 0, 0),
-                Padding = new Thickness(16, 0, 16, 0),
-                Background = new SolidColorBrush(CardBgHover),
-                Foreground = Brushes.White,
+            pairCard.Child = pairGrid;
+            stack.Children.Add(pairCard);
+
+            // 2. 4 Device Slots
+            var slotsHeader = new TextBlock { Text = "등록된 디바이스 슬롯 (최대 4대 멀티 페어링)", FontWeight = FontWeights.Bold, FontSize = 14, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 8) };
+            stack.Children.Add(slotsHeader);
+
+            for (int i = 0; i < 4; i++) {
+                int slotIdx = i;
+                bool isActive = (_config.ActiveSlotIndex == slotIdx);
+
+                var slotCard = new Border {
+                    Background = new SolidColorBrush(isActive ? Color.FromRgb(40, 48, 64) : CardBg),
+                    BorderBrush = new SolidColorBrush(isActive ? AccentCyan : BorderColor),
+                    BorderThickness = new Thickness(1.5),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(16, 12, 16, 12),
+                    Margin = new Thickness(0, 0, 0, 8)
+                };
+
+                var slotGrid = new Grid();
+                slotGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) }); // Icon
+                slotGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Info
+                slotGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Actions
+
+                var iconTxt = new TextBlock {
+                    Text = (slotIdx == 0 ? "📱" : (slotIdx == 1 ? "📟" : "📱")),
+                    FontSize = 24,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+                Grid.SetColumn(iconTxt, 0);
+                slotGrid.Children.Add(iconTxt);
+
+                var slotInfo = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+                nameRow.Children.Add(new TextBlock {
+                    Text = "슬롯 " + (slotIdx + 1) + ": ",
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(AccentCyan),
+                    FontSize = 13
+                });
+                var txtName = new TextBox {
+                    Text = _config.DeviceSlots[slotIdx],
+                    Width = 200,
+                    Height = 26,
+                    Background = new SolidColorBrush(Color.FromRgb(24, 24, 30)),
+                    Foreground = Brushes.White,
+                    BorderBrush = new SolidColorBrush(BorderColor),
+                    Padding = new Thickness(4, 2, 4, 2)
+                };
+                txtName.LostFocus += (s, e) => {
+                    _config.DeviceSlots[slotIdx] = txtName.Text.Trim();
+                    _config.Save();
+                };
+                nameRow.Children.Add(txtName);
+                slotInfo.Children.Add(nameRow);
+
+                slotInfo.Children.Add(new TextBlock {
+                    Text = isActive ? "● 현재 연결된 활성 장치" : "○ 대기 중 (선택 시 바로 전환)",
+                    FontSize = 11,
+                    Foreground = isActive ? new SolidColorBrush(SuccessGreen) : new SolidColorBrush(TextSecondary),
+                    Margin = new Thickness(0, 4, 0, 0)
+                });
+                Grid.SetColumn(slotInfo, 1);
+                slotGrid.Children.Add(slotInfo);
+
+                var actionRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+                var btnSelect = new Button {
+                    Content = isActive ? "✓ 연결 중" : "전환하기",
+                    Padding = new Thickness(14, 6, 14, 6),
+                    Background = isActive ? new SolidColorBrush(SuccessGreen) : new SolidColorBrush(AccentBlue),
+                    Foreground = Brushes.White,
+                    FontWeight = FontWeights.Bold,
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand
+                };
+                btnSelect.Click += (s, e) => {
+                    _hardware.SelectDeviceSlot(slotIdx);
+                    _config.ActiveSlotIndex = slotIdx;
+                    _config.Save();
+                    SwitchTab(1); // Refresh tab
+                    ShowTip("디바이스 전환", "슬롯 " + (slotIdx + 1) + "번 장치로 전환 명령을 전송했습니다.");
+                };
+                actionRow.Children.Add(btnSelect);
+
+                var btnDisconnect = new Button {
+                    Content = "연결 해제",
+                    Margin = new Thickness(8, 0, 0, 0),
+                    Padding = new Thickness(10, 6, 10, 6),
+                    Background = new SolidColorBrush(CardBgHover),
+                    Foreground = Brushes.White,
+                    BorderBrush = new SolidColorBrush(BorderColor),
+                    BorderThickness = new Thickness(1),
+                    Cursor = Cursors.Hand
+                };
+                btnDisconnect.Click += (s, e) => {
+                    _hardware.DisconnectDevice();
+                    ShowTip("연결 해제", "슬롯 " + (slotIdx + 1) + " 연결을 해제했습니다.");
+                };
+                actionRow.Children.Add(btnDisconnect);
+
+                Grid.SetColumn(actionRow, 2);
+                slotGrid.Children.Add(actionRow);
+
+                slotCard.Child = slotGrid;
+                stack.Children.Add(slotCard);
+            }
+
+            // Factory Reset Pairing Button
+            var resetCard = new Border {
+                Background = new SolidColorBrush(CardBg),
                 BorderBrush = new SolidColorBrush(BorderColor),
                 BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(16),
+                Margin = new Thickness(0, 12, 0, 0)
+            };
+            var resetRow = new DockPanel();
+            var resetTxt = new StackPanel();
+            resetTxt.Children.Add(new TextBlock { Text = "페어링 정보 전체 초기화", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
+            resetTxt.Children.Add(new TextBlock { Text = "동글 메모리에 저장된 4개의 모든 기기 페어링 목록을 완전히 삭제합니다.", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
+            resetRow.Children.Add(resetTxt);
+
+            var btnReset = new Button {
+                Content = "⚠️ 전체 페어링 삭제",
+                Padding = new Thickness(14, 6, 14, 6),
+                Background = new SolidColorBrush(Color.FromRgb(160, 40, 40)),
+                Foreground = Brushes.White,
+                FontWeight = FontWeights.Bold,
+                BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
             };
-            btnNorm.Click += (s, e) => LaunchFirmwareScript("[일반용_펌웨어_복구].bat");
-
-            btnRow.Children.Add(btnSec);
-            btnRow.Children.Add(btnNorm);
-            fwStack.Children.Add(btnRow);
-            fwCard.Child = fwStack;
-            stack.Children.Add(fwCard);
+            btnReset.Click += (s, e) => {
+                if (MessageBox.Show("정말로 모든 페어링 목록을 삭제하시겠습니까?", "페어링 초기화", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes) {
+                    _hardware.ClearPairings();
+                    ShowTip("초기화 완료", "모든 페어링 정보를 삭제했습니다.");
+                }
+            };
+            DockPanel.SetDock(btnReset, Dock.Right);
+            resetRow.Children.Add(btnReset);
+            resetCard.Child = resetRow;
+            stack.Children.Add(resetCard);
 
             scroll.Content = stack;
             return scroll;
         }
 
-        // ==========================================
-        // TAB 5: SETTINGS & COMPATIBILITY
-        // ==========================================
-        private UIElement CreateSettingsView() {
+        // =========================================================================
+        // TAB 3: CUSTOMIZABLE HOTKEYS
+        // =========================================================================
+        private UIElement BuildHotkeysTab() {
             var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             var stack = new StackPanel { Margin = new Thickness(8, 16, 8, 16) };
 
             var header = new TextBlock {
-                Text = "⚙️ 환경 설정 및 Windows 11 호환성",
-                FontSize = 17,
+                Text = "⌨️ 단축키 설정 및 커스터마이징",
+                FontSize = 18,
                 FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White,
-                Margin = new Thickness(0, 0, 0, 4)
+                Foreground = Brushes.White
             };
             var desc = new TextBlock {
-                Text = "관리자 권한 자동 실행, DPI 보정 및 동작 옵션을 구성합니다.",
+                Text = "PC와 모바일 간의 입력 전환, 복귀, 기기 직접 선택 단축키를 사용자의 취향에 맞춰 자유롭게 변경합니다.",
                 FontSize = 12.5,
                 Foreground = new SolidColorBrush(TextSecondary),
-                Margin = new Thickness(0, 0, 0, 16)
+                Margin = new Thickness(0, 4, 0, 16)
             };
             stack.Children.Add(header);
             stack.Children.Add(desc);
@@ -828,72 +1502,45 @@ namespace EasyBlueStudio {
             };
             var cardStack = new StackPanel();
 
-            // Setting 1: Auto Start via Task Scheduler
-            var s1 = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
-            var s1Text = new StackPanel();
-            s1Text.Children.Add(new TextBlock { Text = "Windows 시작 시 관리자 권한으로 자동 실행", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
-            s1Text.Children.Add(new TextBlock { Text = "작업 스케줄러(schtasks)의 최고 권한으로 등록하여 부팅 시 UAC 팝업 없이 백그라운드 자동 실행", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
-            s1.Children.Add(s1Text);
+            AddHotkeyRow(cardStack, "입력 전환 단축키 (PC ↔ 모바일 토글)", "PC 제어 중 스마트폰으로 넘어가거나 다시 토글하는 주 단축키", _config.HotkeySwitch, (newKey) => {
+                _config.HotkeySwitch = newKey;
+                _config.Save();
+            });
 
-            var s1Btn = new Button {
-                Content = "자동 시작 등록 / 토글",
-                Height = 32,
-                Padding = new Thickness(14, 0, 14, 0),
-                Background = new SolidColorBrush(AccentBlue),
-                Foreground = Brushes.White,
-                BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand
-            };
-            s1Btn.Click += (s, e) => ToggleAutoStart();
-            DockPanel.SetDock(s1Btn, Dock.Right);
-            s1.Children.Add(s1Btn);
-            cardStack.Children.Add(s1);
+            AddHotkeyRow(cardStack, "모바일에서 PC로 복귀 단축키", "모바일 제어 중 즉시 PC 제어 모드로 안전하게 복귀하는 단축키", _config.HotkeyReturn, (newKey) => {
+                _config.HotkeyReturn = newKey;
+                _config.Save();
+            });
 
-            // Setting 2: DPI compatibility
-            var s2 = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
-            var s2Text = new StackPanel();
-            s2Text.Children.Add(new TextBlock { Text = "Windows 11 Per-Monitor DPI Aware v2 호환성 강제 적용", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
-            s2Text.Children.Add(new TextBlock { Text = "레지스트리에 HIGHDPIAWARE 및 RUNASADMIN 플래그를 영구 주입하여 마우스 걸림 방지", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
-            s2.Children.Add(s2Text);
+            AddHotkeyRow(cardStack, "블루투스 연결 끊기 단축키", "진행 중인 블루투스 무선 연결을 즉시 종료하는 단축키", _config.HotkeyDisconnect, (newKey) => {
+                _config.HotkeyDisconnect = newKey;
+                _config.Save();
+            });
 
-            var s2Btn = new Button {
-                Content = "호환성 플래그 재적용",
-                Height = 32,
-                Padding = new Thickness(14, 0, 14, 0),
-                Background = new SolidColorBrush(CardBgHover),
-                Foreground = Brushes.White,
-                BorderBrush = new SolidColorBrush(BorderColor),
-                BorderThickness = new Thickness(1),
-                Cursor = Cursors.Hand
-            };
-            s2Btn.Click += (s, e) => {
-                ApplyWindows11DpiCompatibility();
-                MessageBox.Show("DPI 호환성 플래그가 재적용되었습니다.", "알림", MessageBoxButton.OK, MessageBoxImage.Information);
-            };
-            DockPanel.SetDock(s2Btn, Dock.Right);
-            s2.Children.Add(s2Btn);
-            cardStack.Children.Add(s2);
+            AddHotkeyRow(cardStack, "슬롯 1번 직접 선택 단축키", _config.DeviceSlots[0] + " 기기로 바로 전환", _config.HotkeySlot1, (newKey) => {
+                _config.HotkeySlot1 = newKey;
+                _config.Save();
+            });
 
-            // Setting 3: Restart Engine
-            var s3 = new DockPanel();
-            var s3Text = new StackPanel();
-            s3Text.Children.Add(new TextBlock { Text = "이지블루 백그라운드 코어 엔진 재시작", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
-            s3Text.Children.Add(new TextBlock { Text = "연결이 끊기거나 마우스가 반응하지 않을 때 엔진을 강제 클린 재시작", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
-            s3.Children.Add(s3Text);
+            AddHotkeyRow(cardStack, "슬롯 2번 직접 선택 단축키", _config.DeviceSlots[1] + " 기기로 바로 전환", _config.HotkeySlot2, (newKey) => {
+                _config.HotkeySlot2 = newKey;
+                _config.Save();
+            });
 
-            var s3Btn = new Button {
-                Content = "🔄 코어 재시작",
-                Height = 32,
-                Padding = new Thickness(14, 0, 14, 0),
-                Background = new SolidColorBrush(Color.FromRgb(180, 50, 50)),
-                Foreground = Brushes.White,
-                BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand
-            };
-            s3Btn.Click += (s, e) => RestartCore();
-            DockPanel.SetDock(s3Btn, Dock.Right);
-            s3.Children.Add(s3Btn);
-            cardStack.Children.Add(s3);
+            AddHotkeyRow(cardStack, "슬롯 3번 직접 선택 단축키", _config.DeviceSlots[2] + " 기기로 바로 전환", _config.HotkeySlot3, (newKey) => {
+                _config.HotkeySlot3 = newKey;
+                _config.Save();
+            });
+
+            AddHotkeyRow(cardStack, "슬롯 4번 직접 선택 단축키", _config.DeviceSlots[3] + " 기기로 바로 전환", _config.HotkeySlot4, (newKey) => {
+                _config.HotkeySlot4 = newKey;
+                _config.Save();
+            });
+
+            AddHotkeyRow(cardStack, "스마트 클립보드 붙여넣기 단축키", "PC 클립보드 텍스트를 모바일 스마트폰에 분해 없이 한글 조합으로 자동 타이핑", _config.HotkeyPaste, (newKey) => {
+                _config.HotkeyPaste = newKey;
+                _config.Save();
+            });
 
             card.Child = cardStack;
             stack.Children.Add(card);
@@ -902,288 +1549,461 @@ namespace EasyBlueStudio {
             return scroll;
         }
 
-        // ==========================================
-        // ACTION HELPERS & LOGIC
-        // ==========================================
-        private void StreamTextToPhone(string text) {
-            try {
-                // Focus phone or inject via clipboard
-                Clipboard.SetText(text);
-                SendCtrlAltP();
-                if (_trayIcon != null) {
-                    _trayIcon.ShowBalloonTip(1500, "텍스트 주입", "스마트폰으로 텍스트 전송 명령을 보냈습니다.", System.Windows.Forms.ToolTipIcon.Info);
-                }
-            } catch (Exception ex) {
-                MessageBox.Show("텍스트 주입 실패: " + ex.Message, "오류", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
+        private void AddHotkeyRow(StackPanel parent, string title, string subtitle, string currentValue, Action<string> onUpdate) {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
 
-        private void SendCtrlAltP() {
-            // Virtual keystroke injection or hotkey
-            try {
-                keybd_event(0x11, 0, 0, 0); // Ctrl down
-                keybd_event(0x12, 0, 0, 0); // Alt down
-                keybd_event(0x50, 0, 0, 0); // P down
-                keybd_event(0x50, 0, 2, 0); // P up
-                keybd_event(0x12, 0, 2, 0); // Alt up
-                keybd_event(0x11, 0, 2, 0); // Ctrl up
-            } catch { }
-        }
+            var textStack = new StackPanel();
+            textStack.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.Bold, Foreground = Brushes.White });
+            textStack.Children.Add(new TextBlock { Text = subtitle, FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
+            row.Children.Add(textStack);
 
-        private void SwitchMobileDevice(int devId) {
-            byte vk = (byte)(0x6F + devId); // F1 = 0x70
-            try {
-                keybd_event(0x11, 0, 0, 0); // Ctrl down
-                keybd_event(vk, 0, 0, 0);   // F1~F4 down
-                keybd_event(vk, 0, 2, 0);   // F1~F4 up
-                keybd_event(0x11, 0, 2, 0); // Ctrl up
+            var rightPanel = new StackPanel { Orientation = Orientation.Horizontal };
+            DockPanel.SetDock(rightPanel, Dock.Right);
 
-                if (_trayIcon != null) {
-                    _trayIcon.ShowBalloonTip(1000, "단말 전환", "단말 " + devId + "번 전환 신호를 보냈습니다.", System.Windows.Forms.ToolTipIcon.Info);
-                }
-            } catch { }
-        }
+            var keyBadge = new Border {
+                Background = new SolidColorBrush(Color.FromRgb(20, 20, 26)),
+                BorderBrush = new SolidColorBrush(AccentBlue),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12, 4, 12, 4),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            var keyText = new TextBlock {
+                Text = currentValue,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(AccentCyan),
+                FontSize = 12
+            };
+            keyBadge.Child = keyText;
+            rightPanel.Children.Add(keyBadge);
 
-        private void ExecuteMobileDeckCommand(string cmd) {
-            // Android / Mobile remote shortcuts
-            switch (cmd) {
-                case "HOME":
-                    // Win key / Alt+Home
-                    keybd_event(0x5B, 0, 0, 0); keybd_event(0x5B, 0, 2, 0);
-                    break;
-                case "BACK":
-                    // ESC
-                    keybd_event(0x1B, 0, 0, 0); keybd_event(0x1B, 0, 2, 0);
-                    break;
-                case "RECENTS":
-                    // Alt+Tab
-                    keybd_event(0x12, 0, 0, 0); keybd_event(0x09, 0, 0, 0);
-                    keybd_event(0x09, 0, 2, 0); keybd_event(0x12, 0, 2, 0);
-                    break;
-                case "VOL_UP":
-                    keybd_event(0xAF, 0, 0, 0); keybd_event(0xAF, 0, 2, 0);
-                    break;
-                case "VOL_DOWN":
-                    keybd_event(0xAE, 0, 0, 0); keybd_event(0xAE, 0, 2, 0);
-                    break;
-                case "MUTE":
-                    keybd_event(0xAD, 0, 0, 0); keybd_event(0xAD, 0, 2, 0);
-                    break;
-                case "MEDIA_PLAY":
-                    keybd_event(0xB3, 0, 0, 0); keybd_event(0xB3, 0, 2, 0);
-                    break;
-                case "MEDIA_PREV":
-                    keybd_event(0xB1, 0, 0, 0); keybd_event(0xB1, 0, 2, 0);
-                    break;
-                case "MEDIA_NEXT":
-                    keybd_event(0xB0, 0, 0, 0); keybd_event(0xB0, 0, 2, 0);
-                    break;
-                case "LANG_TOGGLE":
-                    // Shift+Space
-                    keybd_event(0x10, 0, 0, 0); keybd_event(0x20, 0, 0, 0);
-                    keybd_event(0x20, 0, 2, 0); keybd_event(0x10, 0, 2, 0);
-                    break;
-            }
-        }
-
-        private void LaunchFirmwareScript(string scriptName) {
-            string baseDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\02_보안PC_펌웨어_전환도구");
-            string scriptPath = System.IO.Path.Combine(baseDir, scriptName);
-            if (File.Exists(scriptPath)) {
-                Process.Start(new ProcessStartInfo {
-                    FileName = scriptPath,
-                    WorkingDirectory = baseDir,
-                    UseShellExecute = true
+            var btnChange = new Button {
+                Content = "단축키 변경",
+                Padding = new Thickness(12, 4, 12, 4),
+                Background = new SolidColorBrush(CardBgHover),
+                Foreground = Brushes.White,
+                BorderBrush = new SolidColorBrush(BorderColor),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand
+            };
+            btnChange.Click += (s, e) => {
+                ShowHotkeyRecorder(title, (capturedKey) => {
+                    keyText.Text = capturedKey;
+                    onUpdate(capturedKey);
                 });
+            };
+            rightPanel.Children.Add(btnChange);
+
+            row.Children.Add(rightPanel);
+            parent.Children.Add(row);
+        }
+
+        private void ShowHotkeyRecorder(string title, Action<string> onRecorded) {
+            var dlg = new Window {
+                Title = "단축키 녹음",
+                Width = 380,
+                Height = 200,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = new SolidColorBrush(BgDark),
+                WindowStyle = WindowStyle.ToolWindow,
+                ResizeMode = ResizeMode.NoResize
+            };
+
+            var stack = new StackPanel { Margin = new Thickness(20), VerticalAlignment = VerticalAlignment.Center };
+            stack.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.Bold, FontSize = 14, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center });
+            stack.Children.Add(new TextBlock { Text = "원하는 키 조합을 직접 누르세요 (예: Ctrl+Alt+화살표, F12 등)", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 6, 0, 16), HorizontalAlignment = HorizontalAlignment.Center });
+
+            var keyDisplay = new Border {
+                Background = new SolidColorBrush(CardBg),
+                BorderBrush = new SolidColorBrush(AccentCyan),
+                BorderThickness = new Thickness(1.5),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(16, 10, 16, 10),
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            var keyDisplayText = new TextBlock { Text = "키를 누르세요...", FontWeight = FontWeights.Bold, FontSize = 14, Foreground = new SolidColorBrush(AccentCyan) };
+            keyDisplay.Child = keyDisplayText;
+            stack.Children.Add(keyDisplay);
+
+            dlg.KeyDown += (s, e) => {
+                e.Handled = true;
+                var sb = new StringBuilder();
+                if ((Keyboard.Modifiers & ModifierKeys.Control) != 0) sb.Append("Ctrl+");
+                if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0) sb.Append("Alt+");
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0) sb.Append("Shift+");
+                if ((Keyboard.Modifiers & ModifierKeys.Windows) != 0) sb.Append("Win+");
+
+                Key k = e.Key == Key.System ? e.SystemKey : e.Key;
+                if (k != Key.LeftCtrl && k != Key.RightCtrl && k != Key.LeftAlt && k != Key.RightAlt &&
+                    k != Key.LeftShift && k != Key.RightShift && k != Key.LWin && k != Key.RWin) {
+                    sb.Append(k.ToString());
+                    string result = sb.ToString();
+                    keyDisplayText.Text = result;
+                    onRecorded(result);
+                    dlg.DialogResult = true;
+                }
+            };
+
+            dlg.Content = stack;
+            dlg.ShowDialog();
+        }
+
+        // =========================================================================
+        // TAB 4: PREFERENCES & INPUT BEHAVIOR
+        // =========================================================================
+        private UIElement BuildPreferencesTab() {
+            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            var stack = new StackPanel { Margin = new Thickness(8, 16, 8, 16) };
+
+            var header = new TextBlock { Text = "⚙️ 입력 및 하드웨어 환경설정", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = Brushes.White };
+            var desc = new TextBlock { Text = "마우스 감도, 경계 이동 조건, 동글 LED 및 클립보드 스트리머 설정을 구성합니다.", FontSize = 12.5, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 4, 0, 16) };
+            stack.Children.Add(header);
+            stack.Children.Add(desc);
+
+            var card = new Border {
+                Background = new SolidColorBrush(CardBg),
+                BorderBrush = new SolidColorBrush(BorderColor),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(18)
+            };
+            var cardStack = new StackPanel();
+
+            // 1. Mouse Speed
+            var s1 = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
+            var s1Txt = new StackPanel();
+            s1Txt.Children.Add(new TextBlock { Text = "모바일 마우스 속도 배율", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
+            s1Txt.Children.Add(new TextBlock { Text = "모바일 제어 시 마우스 커서의 이동 속도를 조절합니다 (0.5x ~ 3.0x)", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
+            s1.Children.Add(s1Txt);
+
+            var s1Val = new TextBlock { Text = _config.MouseSpeed.ToString("0.0") + "x", Foreground = new SolidColorBrush(AccentCyan), FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+            DockPanel.SetDock(s1Val, Dock.Right);
+            s1.Children.Add(s1Val);
+
+            var slider = new Slider {
+                Minimum = 0.5,
+                Maximum = 3.0,
+                Value = _config.MouseSpeed,
+                Width = 140,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            slider.ValueChanged += (s, e) => {
+                _config.MouseSpeed = slider.Value;
+                s1Val.Text = slider.Value.ToString("0.0") + "x";
+                _config.Save();
+            };
+            DockPanel.SetDock(slider, Dock.Right);
+            s1.Children.Add(slider);
+            cardStack.Children.Add(s1);
+
+            // 2. Edge Traversal Toggle
+            var s2 = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
+            var s2Txt = new StackPanel();
+            s2Txt.Children.Add(new TextBlock { Text = "마우스 화면 경계 이동 활성화 (Flow)", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
+            s2Txt.Children.Add(new TextBlock { Text = "마우스가 지정된 화면 모서리에 닿았을 때 자동으로 스마트폰으로 넘어갑니다.", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
+            s2.Children.Add(s2Txt);
+
+            var chkEdge = new CheckBox { IsChecked = _config.EdgeTraversalEnabled, VerticalAlignment = VerticalAlignment.Center };
+            chkEdge.Checked += (s, e) => { _config.EdgeTraversalEnabled = true; _config.Save(); };
+            chkEdge.Unchecked += (s, e) => { _config.EdgeTraversalEnabled = false; _config.Save(); };
+            DockPanel.SetDock(chkEdge, Dock.Right);
+            s2.Children.Add(chkEdge);
+            cardStack.Children.Add(s2);
+
+            // 3. Edge Bounce Return Toggle
+            var s3 = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
+            var s3Txt = new StackPanel();
+            s3Txt.Children.Add(new TextBlock { Text = "마우스 역방향 튕김으로 PC 복귀 (Bounce Return)", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
+            s3Txt.Children.Add(new TextBlock { Text = "모바일 제어 중 마우스를 반대 방향 경계로 밀면 즉시 PC 제어로 자동 복귀합니다.", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
+            s3.Children.Add(s3Txt);
+
+            var chkBounce = new CheckBox { IsChecked = _config.EdgeBounceReturnEnabled, VerticalAlignment = VerticalAlignment.Center };
+            chkBounce.Checked += (s, e) => { _config.EdgeBounceReturnEnabled = true; _config.Save(); };
+            chkBounce.Unchecked += (s, e) => { _config.EdgeBounceReturnEnabled = false; _config.Save(); };
+            DockPanel.SetDock(chkBounce, Dock.Right);
+            s3.Children.Add(chkBounce);
+            cardStack.Children.Add(s3);
+
+            // 4. Hardware LED Toggle
+            var s4 = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
+            var s4Txt = new StackPanel();
+            s4Txt.Children.Add(new TextBlock { Text = "이지블루 동글 LED 켜기", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
+            s4Txt.Children.Add(new TextBlock { Text = "동글 본체의 상태 표시 파란색 LED 동작을 제어합니다.", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
+            s4.Children.Add(s4Txt);
+
+            var chkLed = new CheckBox { IsChecked = _config.LedEnabled, VerticalAlignment = VerticalAlignment.Center };
+            chkLed.Checked += (s, e) => {
+                _config.LedEnabled = true;
+                _hardware.SetLed(true);
+                _config.Save();
+            };
+            chkLed.Unchecked += (s, e) => {
+                _config.LedEnabled = false;
+                _hardware.SetLed(false);
+                _config.Save();
+            };
+            DockPanel.SetDock(chkLed, Dock.Right);
+            s4.Children.Add(chkLed);
+            cardStack.Children.Add(s4);
+
+            // 5. Input Mode Selector (Combo / KB only / Mouse only)
+            var s5 = new DockPanel();
+            var s5Txt = new StackPanel();
+            s5Txt.Children.Add(new TextBlock { Text = "동글 입력 프로필 모드", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
+            s5Txt.Children.Add(new TextBlock { Text = "콤보 (키보드+마우스) 또는 전용 모드를 선택합니다.", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
+            s5.Children.Add(s5Txt);
+
+            var comboMode = new ComboBox { Width = 150, VerticalAlignment = VerticalAlignment.Center };
+            comboMode.Items.Add("콤보 (키보드+마우스)");
+            comboMode.Items.Add("키보드 전용");
+            comboMode.Items.Add("마우스 전용");
+            comboMode.SelectedIndex = _config.InputMode;
+            comboMode.SelectionChanged += (s, e) => {
+                _config.InputMode = comboMode.SelectedIndex;
+                _hardware.SetInputMode(_config.InputMode);
+                _config.Save();
+            };
+            DockPanel.SetDock(comboMode, Dock.Right);
+            s5.Children.Add(comboMode);
+            cardStack.Children.Add(s5);
+
+            card.Child = cardStack;
+            stack.Children.Add(card);
+
+            scroll.Content = stack;
+            return scroll;
+        }
+
+        // =========================================================================
+        // TAB 5: MOBILE REMOTE DECK & CLIPBOARD STREAMER
+        // =========================================================================
+        private UIElement BuildRemoteDeckTab() {
+            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            var stack = new StackPanel { Margin = new Thickness(8, 16, 8, 16) };
+
+            var header = new TextBlock { Text = "🎮 모바일 리모컨 덱 & 클립보드 스트리머", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = Brushes.White };
+            var desc = new TextBlock { Text = "스마트폰 원격 제어 단축키 및 한글 분해 없는 스마트 클립보드 전송기입니다.", FontSize = 12.5, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 4, 0, 16) };
+            stack.Children.Add(header);
+            stack.Children.Add(desc);
+
+            // Remote Buttons
+            var deckCard = new Border {
+                Background = new SolidColorBrush(CardBg),
+                BorderBrush = new SolidColorBrush(BorderColor),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(18),
+                Margin = new Thickness(0, 0, 0, 16)
+            };
+            var deckStack = new StackPanel();
+            deckStack.Children.Add(new TextBlock { Text = "스마트폰 시스템 제어", FontWeight = FontWeights.Bold, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 12) });
+
+            var row1 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+            row1.Children.Add(CreateDeckBtn("🏠 홈 (Home)", () => _hardware.SendKeyboardReport(0x08, null))); // Win key
+            row1.Children.Add(CreateDeckBtn("◀ 뒤로가기 (Back)", () => _hardware.SendKeyboardReport(0, new byte[] { 0x29 }))); // ESC
+            row1.Children.Add(CreateDeckBtn("📑 최근 앱 (Recents)", () => _hardware.SendKeyboardReport(0x04, new byte[] { 0x2B }))); // Alt+Tab
+            row1.Children.Add(CreateDeckBtn("🔒 화면 잠금/켜기", () => _hardware.SendKeyboardReport(0x08, new byte[] { 0x0F }))); // Win+L
+            deckStack.Children.Add(row1);
+
+            var row2 = new StackPanel { Orientation = Orientation.Horizontal };
+            row2.Children.Add(CreateDeckBtn("🔊 볼륨 +", () => _hardware.SendKeyboardReport(0, new byte[] { 0x80 })));
+            row2.Children.Add(CreateDeckBtn("🔉 볼륨 -", () => _hardware.SendKeyboardReport(0, new byte[] { 0x81 })));
+            row2.Children.Add(CreateDeckBtn("🔇 음소거", () => _hardware.SendKeyboardReport(0, new byte[] { 0x7F })));
+            row2.Children.Add(CreateDeckBtn("⏯ 재생 / 정지", () => _hardware.SendKeyboardReport(0, new byte[] { 0xCD })));
+            deckStack.Children.Add(row2);
+
+            deckCard.Child = deckStack;
+            stack.Children.Add(deckCard);
+
+            // Text Streamer
+            var textCard = new Border {
+                Background = new SolidColorBrush(CardBg),
+                BorderBrush = new SolidColorBrush(BorderColor),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(18)
+            };
+            var textStack = new StackPanel();
+            textStack.Children.Add(new TextBlock { Text = "스마트 텍스트 원격 주입 (한글 자모 분리 방지)", FontWeight = FontWeights.Bold, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 8) });
+
+            var inputTxt = new TextBox {
+                Height = 80,
+                Background = new SolidColorBrush(Color.FromRgb(24, 24, 30)),
+                Foreground = Brushes.White,
+                BorderBrush = new SolidColorBrush(BorderColor),
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                Padding = new Thickness(8),
+                Text = "이지블루 스튜디오를 통해 전송할 텍스트를 입력하세요."
+            };
+            textStack.Children.Add(inputTxt);
+
+            var sendBtn = new Button {
+                Content = "🚀 모바일로 텍스트 즉시 전송",
+                Height = 36,
+                Margin = new Thickness(0, 10, 0, 0),
+                Background = new SolidColorBrush(AccentBlue),
+                Foreground = Brushes.White,
+                FontWeight = FontWeights.Bold,
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            sendBtn.Click += (s, e) => {
+                Clipboard.SetText(inputTxt.Text);
+                StreamClipboardToMobile();
+            };
+            textStack.Children.Add(sendBtn);
+
+            textCard.Child = textStack;
+            stack.Children.Add(textCard);
+
+            scroll.Content = stack;
+            return scroll;
+        }
+
+        private Button CreateDeckBtn(string text, Action action) {
+            var btn = new Button {
+                Content = text,
+                Height = 36,
+                Padding = new Thickness(14, 0, 14, 0),
+                Margin = new Thickness(0, 0, 8, 0),
+                Background = new SolidColorBrush(CardBgHover),
+                Foreground = Brushes.White,
+                BorderBrush = new SolidColorBrush(BorderColor),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand
+            };
+            btn.Click += (s, e) => action();
+            return btn;
+        }
+
+        private void StreamClipboardToMobile() {
+            try {
+                // Switch to mobile briefly and send Paste command
+                _inputHook.SwitchToMobile();
+                _hardware.SendKeyboardReport(0x01, new byte[] { 0x19 }); // Ctrl+V
+                Thread.Sleep(50);
+                _hardware.SendKeyboardReport(0, new byte[] { 0 });
+                ShowTip("클립보드 주입", "스마트폰으로 클립보드 붙여넣기 신호를 전송했습니다.");
+            } catch (Exception ex) {
+                MessageBox.Show("클립보드 전송 오류: " + ex.Message, "오류", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        // =========================================================================
+        // TAB 6: SECURITY PC & DIAGNOSTICS
+        // =========================================================================
+        private UIElement BuildDiagnosticsTab() {
+            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            var stack = new StackPanel { Margin = new Thickness(8, 16, 8, 16) };
+
+            var header = new TextBlock { Text = "🛡️ 사내 보안 PC 및 하드웨어 진단", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = Brushes.White };
+            var desc = new TextBlock { Text = "사내 DLP(매체제어) 솔루션 차단 여부 및 순수 HID 보안 모드를 진단합니다.", FontSize = 12.5, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 4, 0, 16) };
+            stack.Children.Add(header);
+            stack.Children.Add(desc);
+
+            var hwCard = new Border {
+                Background = new SolidColorBrush(CardBg),
+                BorderBrush = new SolidColorBrush(BorderColor),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(18)
+            };
+            var hwStack = new StackPanel();
+            hwStack.Children.Add(new TextBlock { Text = "하드웨어 진단 상태", FontWeight = FontWeights.Bold, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 8) });
+
+            string secStatus = _hardware.IsConnected ? (_hardware.IsPureHidMode ? "✅ [보안PC 순수 HID 모드] 가상 드라이브 완전 차단됨 (사내 DLP 안전)" : "ℹ️ [일반 모드] 가상 드라이브(D:) 마운트됨") : "⚠️ 이지블루 동글이 연결되지 않았습니다.";
+            var badge = new Border {
+                Background = new SolidColorBrush(_hardware.IsPureHidMode ? Color.FromRgb(20, 60, 40) : Color.FromRgb(40, 40, 50)),
+                BorderBrush = new SolidColorBrush(_hardware.IsPureHidMode ? SuccessGreen : BorderColor),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            badge.Child = new TextBlock { Text = secStatus, FontWeight = FontWeights.Bold, Foreground = _hardware.IsPureHidMode ? new SolidColorBrush(SuccessGreen) : Brushes.White };
+            hwStack.Children.Add(badge);
+
+            hwStack.Children.Add(new TextBlock { Text = "• 장치 ID: USB\\VID_1D54&PID_B002 (Zaram Smart BKM)", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary) });
+            hwStack.Children.Add(new TextBlock { Text = "• 통신 프로토콜: USB HID (UsagePage: 0xFFA0, Usage: 0x0001 - Driverless)", FontSize = 11.5, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 2, 0, 0) });
+            hwStack.Children.Add(new TextBlock { Text = "• 장치 경로: " + (_hardware.DevicePath ?? "미연결"), FontSize = 10, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 2, 0, 0) });
+
+            hwCard.Child = hwStack;
+            stack.Children.Add(hwCard);
+
+            scroll.Content = stack;
+            return scroll;
+        }
+
+        private void UpdateStatusBadge() {
+            if (_hardware.IsConnected) {
+                _statusBadge.Background = new SolidColorBrush(Color.FromRgb(20, 60, 35));
+                _statusBadgeText.Text = _hardware.IsPureHidMode ? "🛡️ 보안PC 순수 HID 연결됨" : "⚡ 이지블루 연결됨";
+                _statusBadgeText.Foreground = new SolidColorBrush(SuccessGreen);
             } else {
-                MessageBox.Show("스크립트를 찾을 수 없습니다: " + scriptPath, "오류", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void CheckHardware() {
-            try {
-                bool foundUsb = false;
-                bool hasDrive = false;
-
-                var drives = DriveInfo.GetDrives();
-                foreach (var d in drives) {
-                    if (d.IsReady) {
-                        try {
-                            if (File.Exists(System.IO.Path.Combine(d.RootDirectory.FullName, @"Win\EBTiny.exe"))) {
-                                hasDrive = true;
-                                break;
-                            }
-                        } catch { }
-                    }
-                }
-
-                // Check WMI
-                using (var searcher = new System.Management.ManagementObjectSearcher(
-                    "SELECT DeviceID FROM Win32_PnPEntity WHERE DeviceID LIKE '%VID_1D54&PID_B002%'")) {
-                    foreach (var dev in searcher.Get()) {
-                        foundUsb = true;
-                        break;
-                    }
-                }
-
-                _isDeviceConnected = foundUsb;
-                _isSecureMode = foundUsb && !hasDrive;
-
-                if (!_isDeviceConnected) {
-                    _statusBadgeText.Text = "● 동글 미연결";
-                    _statusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(240, 80, 80));
-                    _statusBadge.Background = new SolidColorBrush(Color.FromRgb(50, 25, 25));
-                } else if (_isSecureMode) {
-                    _statusBadgeText.Text = "● 보안PC 모드 (순수 HID / DLP 안전)";
-                    _statusBadgeText.Foreground = new SolidColorBrush(AccentCyan);
-                    _statusBadge.Background = new SolidColorBrush(Color.FromRgb(15, 50, 70));
-                } else {
-                    _statusBadgeText.Text = "● 일반 모드 (가상 드라이브)";
-                    _statusBadgeText.Foreground = new SolidColorBrush(SuccessGreen);
-                    _statusBadge.Background = new SolidColorBrush(Color.FromRgb(15, 50, 25));
-                }
-            } catch { }
-        }
-
-        private void EnsureCoreEngineRunning() {
-            try {
-                if (_ebProcess == null || _ebProcess.HasExited) {
-                    var procs = Process.GetProcessesByName("EBTiny");
-                    if (procs.Length > 0) {
-                        _ebProcess = procs[0];
-                        return;
-                    }
-
-                    if (File.Exists(_ebExePath)) {
-                        var psi = new ProcessStartInfo {
-                            FileName = _ebExePath,
-                            WorkingDirectory = _coreDir,
-                            UseShellExecute = true,
-                            WindowStyle = ProcessWindowStyle.Minimized
-                        };
-                        _ebProcess = Process.Start(psi);
-                    }
-                }
-            } catch { }
-        }
-
-        private void RestartCore() {
-            try {
-                var procs = Process.GetProcessesByName("EBTiny");
-                foreach (var p in procs) {
-                    try { p.Kill(); p.WaitForExit(1500); } catch { }
-                }
-                EnsureCoreEngineRunning();
-                MessageBox.Show("코어 엔진이 재시작되었습니다.", "알림", MessageBoxButton.OK, MessageBoxImage.Information);
-            } catch (Exception ex) {
-                MessageBox.Show("재시작 실패: " + ex.Message, "오류", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void ApplyWindows11DpiCompatibility() {
-            try {
-                string appCompatKey = @"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers";
-                using (var key = Registry.CurrentUser.CreateSubKey(appCompatKey)) {
-                    if (key != null && File.Exists(_ebExePath)) {
-                        key.SetValue(_ebExePath, "~ HIGHDPIAWARE RUNASADMIN");
-                    }
-                }
-            } catch { }
-        }
-
-        private void ToggleAutoStart() {
-            try {
-                string taskName = "EasyBlueStudio_AutoStart";
-                string exePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-
-                var psiCheck = new ProcessStartInfo("schtasks.exe", "/query /tn \"" + taskName + "\"") {
-                    CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true
-                };
-                var proc = Process.Start(psiCheck);
-                proc.WaitForExit();
-
-                if (proc.ExitCode == 0) {
-                    var pDel = Process.Start(new ProcessStartInfo("schtasks.exe", "/delete /tn \"" + taskName + "\" /f") {
-                        CreateNoWindow = true, UseShellExecute = true, Verb = "runas"
-                    });
-                    if (pDel != null) pDel.WaitForExit();
-                    MessageBox.Show("자동 시작 등록이 해제되었습니다.", "알림", MessageBoxButton.OK, MessageBoxImage.Information);
-                } else {
-                    string cmd = string.Format("/create /tn \"{0}\" /tr \"\\\"{1}\\\"\" /sc onlogon /rl highest /f", taskName, exePath);
-                    var pAdd = Process.Start(new ProcessStartInfo("schtasks.exe", cmd) {
-                        CreateNoWindow = true, UseShellExecute = true, Verb = "runas"
-                    });
-                    if (pAdd != null) pAdd.WaitForExit();
-                    MessageBox.Show("Windows 시작 시 관리자 권한 자동 실행으로 등록되었습니다!\n(UAC 팝업 없이 백그라운드 자동 실행)", "완료", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            } catch (Exception ex) {
-                MessageBox.Show("설정 실패: " + ex.Message, "오류", MessageBoxButton.OK, MessageBoxImage.Error);
+                _statusBadge.Background = new SolidColorBrush(Color.FromRgb(50, 35, 20));
+                _statusBadgeText.Text = "⚠️ 동글 미연결 (USB 확인)";
+                _statusBadgeText.Foreground = new SolidColorBrush(WarningYellow);
             }
         }
 
         private void InitializeTray() {
-            _trayIcon = new System.Windows.Forms.NotifyIcon();
-            _trayIcon.Text = "EasyBlue Studio 2026";
-            _trayIcon.Visible = true;
+            _trayIcon = new System.Windows.Forms.NotifyIcon {
+                Text = "EasyBlue Studio 2026",
+                Icon = System.Drawing.SystemIcons.Application,
+                Visible = true
+            };
 
-            // Generate modern tray icon
-            using (var bmp = new System.Drawing.Bitmap(32, 32))
-            using (var g = System.Drawing.Graphics.FromImage(bmp)) {
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                using (var brush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0, 140, 255))) {
-                    g.FillEllipse(brush, 2, 2, 28, 28);
-                }
-                using (var pen = new System.Drawing.Pen(System.Drawing.Color.White, 3)) {
-                    g.DrawLine(pen, 16, 6, 16, 26);
-                    g.DrawLine(pen, 16, 6, 22, 12);
-                    g.DrawLine(pen, 22, 12, 10, 20);
-                    g.DrawLine(pen, 10, 12, 22, 20);
-                    g.DrawLine(pen, 22, 20, 16, 26);
-                }
-                _trayIcon.Icon = System.Drawing.Icon.FromHandle(bmp.GetHicon());
+            var menu = new System.Windows.Forms.ContextMenuStrip();
+            menu.Items.Add("🖥️ EasyBlue Studio 열기", null, (s, e) => { Show(); WindowState = WindowState.Normal; Activate(); });
+            menu.Items.Add("🔄 PC ↔ 모바일 전환 (" + _config.HotkeySwitch + ")", null, (s, e) => _inputHook.ToggleMode());
+            menu.Items.Add("📶 페어링 대기 모드 시작", null, (s, e) => _hardware.EnterPairingMode());
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
+            var slotSubmenu = new System.Windows.Forms.ToolStripMenuItem("📱 디바이스 슬롯 선택");
+            for (int i = 0; i < 4; i++) {
+                int sIdx = i;
+                slotSubmenu.DropDownItems.Add("슬롯 " + (sIdx + 1) + ": " + _config.DeviceSlots[sIdx], null, (s, e) => {
+                    _hardware.SelectDeviceSlot(sIdx);
+                    _config.ActiveSlotIndex = sIdx;
+                    _config.Save();
+                });
             }
+            menu.Items.Add(slotSubmenu);
 
-            var cms = new System.Windows.Forms.ContextMenuStrip();
-            cms.Items.Add("대시보드 열기", null, (s, e) => {
-                Show();
-                WindowState = WindowState.Normal;
-                Activate();
-            });
-            cms.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-            cms.Items.Add("완전 종료", null, (s, e) => {
-                _statusTimer.Stop();
+            menu.Items.Add("🔌 블루투스 연결 해제", null, (s, e) => _hardware.DisconnectDevice());
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+            menu.Items.Add("✕ 완전히 종료", null, (s, e) => {
+                _inputHook.Dispose();
+                _hardware.Dispose();
                 _trayIcon.Visible = false;
                 _trayIcon.Dispose();
-                try { if (_ebProcess != null && !_ebProcess.HasExited) _ebProcess.Kill(); } catch { }
                 Application.Current.Shutdown();
             });
 
-            _trayIcon.ContextMenuStrip = cms;
-            _trayIcon.DoubleClick += (s, e) => {
-                Show();
-                WindowState = WindowState.Normal;
-                Activate();
-            };
+            _trayIcon.ContextMenuStrip = menu;
+            _trayIcon.DoubleClick += (s, e) => { Show(); WindowState = WindowState.Normal; Activate(); };
         }
 
-        private Button CreateIconBtn(string icon, Action clickAction) {
-            var btn = new Button {
-                Content = icon,
-                Width = 36,
-                Height = 32,
-                Margin = new Thickness(2, 0, 0, 0),
-                Background = Brushes.Transparent,
-                Foreground = new SolidColorBrush(TextSecondary),
-                BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand,
-                FontSize = 13,
-                FontWeight = FontWeights.Bold
-            };
-            btn.Click += (s, e) => clickAction();
-            return btn;
+        private void ShowTip(string title, string text) {
+            if (_trayIcon != null) {
+                _trayIcon.ShowBalloonTip(1500, title, text, System.Windows.Forms.ToolTipIcon.Info);
+            }
         }
 
-        [DllImport("user32.dll")]
-        private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+        protected override void OnClosed(EventArgs e) {
+            if (_pollTimer != null) _pollTimer.Stop();
+            if (_inputHook != null) _inputHook.Dispose();
+            if (_hardware != null) _hardware.Dispose();
+            if (_trayIcon != null) {
+                _trayIcon.Visible = false;
+                _trayIcon.Dispose();
+            }
+            if (_mobileIndicatorWindow != null) {
+                _mobileIndicatorWindow.Close();
+            }
+            base.OnClosed(e);
+        }
     }
 }
