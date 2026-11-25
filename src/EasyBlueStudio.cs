@@ -265,11 +265,12 @@ namespace EasyBlueStudio {
         public bool SendCommand(ushort cmdCode, ushort subParam, byte[] extraData) {
             if (_hidHandle == IntPtr.Zero) return false;
 
-            byte[] packet = new byte[65];
-            packet[0] = 0x00; // Report ID
+            // EasyBlue vendor HID feature report: 513 bytes, ReportID 0x01
+            byte[] packet = new byte[513];
+            packet[0] = 0x01; // Report ID
             packet[1] = 0xBF; // Magic little-endian
             packet[2] = 0x2A;
-            packet[3] = 0x00;
+            packet[3] = 0x38; // Payload length (56 bytes)
             packet[4] = 0x00;
             packet[5] = (byte)(cmdCode & 0xFF);
             packet[6] = (byte)((cmdCode >> 8) & 0xFF);
@@ -277,20 +278,20 @@ namespace EasyBlueStudio {
             packet[8] = (byte)((subParam >> 8) & 0xFF);
 
             if (extraData != null && extraData.Length > 0) {
-                int copyLen = Math.Min(extraData.Length, 55);
+                int copyLen = Math.Min(extraData.Length, 500);
                 Array.Copy(extraData, 0, packet, 9, copyLen);
             }
 
             bool ok = HidD_SetFeature(_hidHandle, packet, packet.Length);
-            if (!ok) {
-                uint written;
-                ok = WriteFile(_hidHandle, packet, (uint)packet.Length, out written, IntPtr.Zero);
-            }
             return ok;
         }
 
         public bool EnterPairingMode() {
-            return SendCommand(0x8300, 0x0002, null);
+            // Send 0x8300 (Pairing Inquiry) and 0x8200 (Discoverable Mode)
+            bool ok1 = SendCommand(0x8300, 0x0002, null);
+            Thread.Sleep(50);
+            bool ok2 = SendCommand(0x8200, 0x0001, null);
+            return ok1 || ok2;
         }
 
         public bool SelectDeviceSlot(int slotIndex) {
@@ -316,19 +317,18 @@ namespace EasyBlueStudio {
 
         public bool SendMouseReport(byte buttons, sbyte dx, sbyte dy, sbyte wheel) {
             if (_hidHandle == IntPtr.Zero) return false;
-            byte[] report = new byte[9];
+            byte[] report = new byte[513];
             report[0] = 0x02; // Mouse Report ID
             report[1] = buttons;
             report[2] = (byte)dx;
             report[3] = (byte)dy;
             report[4] = (byte)wheel;
-            uint written;
-            return WriteFile(_hidHandle, report, (uint)report.Length, out written, IntPtr.Zero);
+            return HidD_SetFeature(_hidHandle, report, report.Length);
         }
 
         public bool SendKeyboardReport(byte modifier, byte[] keycodes) {
             if (_hidHandle == IntPtr.Zero) return false;
-            byte[] report = new byte[9];
+            byte[] report = new byte[513];
             report[0] = 0x01; // Keyboard Report ID
             report[1] = modifier;
             report[2] = 0x00; // Reserved
@@ -337,8 +337,7 @@ namespace EasyBlueStudio {
                     report[3 + i] = keycodes[i];
                 }
             }
-            uint written;
-            return WriteFile(_hidHandle, report, (uint)report.Length, out written, IntPtr.Zero);
+            return HidD_SetFeature(_hidHandle, report, report.Length);
         }
 
         public void Close() {
