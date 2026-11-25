@@ -22,7 +22,7 @@ namespace EasyBlueStudio {
             bool isNew;
             using (var mutex = new Mutex(true, "EasyBlueStudio_SingleInstance_Mutex_2026", out isNew)) {
                 if (!isNew) {
-                    MessageBox.Show("EasyBlue Studio가 이미 실행 중입니다.", "EasyBlue Studio", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show("EasyBlue Studio가 이미 실행 중입니다.\n작업 표시줄 오른쪽 시스템 트레이에서 아이콘을 확인하세요.", "EasyBlue Studio", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
@@ -225,7 +225,6 @@ namespace EasyBlueStudio {
                             IntPtr pDevicePath = new IntPtr(detailData.ToInt64() + 4);
                             string path = Marshal.PtrToStringAuto(pDevicePath);
                             if (path != null && path.IndexOf("vid_1d54&pid_b002", StringComparison.OrdinalIgnoreCase) >= 0) {
-                                // Match found! Check if vendor HID
                                 IntPtr handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
                                 if (handle != IntPtr.Zero && handle != (IntPtr)(-1)) {
                                     _hidHandle = handle;
@@ -249,7 +248,6 @@ namespace EasyBlueStudio {
         }
 
         private void CheckSecurityDrives() {
-            // If D:\ or any removable drive label "EasyBlue" or "EBTiny" does not exist, it is Pure HID Security PC Mode!
             _isPureHidMode = true;
             try {
                 foreach (var drive in DriveInfo.GetDrives()) {
@@ -264,12 +262,9 @@ namespace EasyBlueStudio {
             } catch { }
         }
 
-        // Send EasyBlue 0x2ABF Feature Command
         public bool SendCommand(ushort cmdCode, ushort subParam, byte[] extraData) {
             if (_hidHandle == IntPtr.Zero) return false;
 
-            // EasyBlue Feature Report: 65 bytes (1-byte Report ID 0x00 + 64-byte payload)
-            // Header: 0xBF, 0x2A (magic), length, cmdCode, subParam
             byte[] packet = new byte[65];
             packet[0] = 0x00; // Report ID
             packet[1] = 0xBF; // Magic little-endian
@@ -288,49 +283,37 @@ namespace EasyBlueStudio {
 
             bool ok = HidD_SetFeature(_hidHandle, packet, packet.Length);
             if (!ok) {
-                // Fallback to WriteFile
                 uint written;
                 ok = WriteFile(_hidHandle, packet, (uint)packet.Length, out written, IntPtr.Zero);
             }
             return ok;
         }
 
-        // 1. Enter Pairing Standby Mode (페어링 대기)
         public bool EnterPairingMode() {
-            // 0x8300 with param 0x0002
             return SendCommand(0x8300, 0x0002, null);
         }
 
-        // 2. Select Paired Device Slot (1~4)
         public bool SelectDeviceSlot(int slotIndex) {
-            // slotIndex: 0, 1, 2, 3 -> command 0x8310 with param (slotIndex)
             byte[] slotData = new byte[] { (byte)slotIndex };
             return SendCommand(0x8310, (ushort)slotIndex, slotData);
         }
 
-        // 3. Disconnect Active Bluetooth Session
         public bool DisconnectDevice() {
-            // 0x8100 with param 0x0002
             return SendCommand(0x8100, 0x0002, null);
         }
 
-        // 4. Hardware LED Control (On / Off)
         public bool SetLed(bool on) {
-            // 0x0011 with param (on ? 1 : 0)
             return SendCommand(0x0011, (ushort)(on ? 1 : 0), null);
         }
 
-        // 5. Clear All Pairing Information
         public bool ClearPairings() {
             return SendCommand(0x8200, 0x0000, null);
         }
 
-        // 6. Set Device Input Mode (0: Combo, 1: Keyboard, 2: Mouse)
         public bool SetInputMode(int mode) {
             return SendCommand(0x8021, (ushort)mode, null);
         }
 
-        // 7. Send Mouse Move / Click to Mobile
         public bool SendMouseReport(byte buttons, sbyte dx, sbyte dy, sbyte wheel) {
             if (_hidHandle == IntPtr.Zero) return false;
             byte[] report = new byte[9];
@@ -343,7 +326,6 @@ namespace EasyBlueStudio {
             return WriteFile(_hidHandle, report, (uint)report.Length, out written, IntPtr.Zero);
         }
 
-        // 8. Send Keyboard Keystroke to Mobile
         public bool SendKeyboardReport(byte modifier, byte[] keycodes) {
             if (_hidHandle == IntPtr.Zero) return false;
             byte[] report = new byte[9];
@@ -483,7 +465,6 @@ namespace EasyBlueStudio {
         public void SwitchToPC() {
             if (!_isMobileActive) return;
             _isMobileActive = false;
-            // Restore cursor slightly inside boundary
             SetCursorPos(_lastMousePos.x, _lastMousePos.y);
             if (OnModeChanged != null) OnModeChanged(false);
         }
@@ -513,7 +494,6 @@ namespace EasyBlueStudio {
 
             if (reqCtrl != ctrlDown || reqAlt != altDown || reqShift != shiftDown) return false;
 
-            // Match keyPart with currentVk
             if (string.IsNullOrEmpty(keyPart)) return false;
             if (keyPart.Equals("Right", StringComparison.OrdinalIgnoreCase) && currentVk == 0x27) return true;
             if (keyPart.Equals("Left", StringComparison.OrdinalIgnoreCase) && currentVk == 0x25) return true;
@@ -537,7 +517,7 @@ namespace EasyBlueStudio {
             if (nCode >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN)) {
                 KBDLLHOOKSTRUCT kbd = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
 
-                // Emergency Return: ESC 3 times within 1.5 seconds OR Pause/Break
+                // Emergency Return: ESC 3 times within 1.5s OR Pause/Break
                 if (kbd.vkCode == 0x1B) { // ESC
                     if ((DateTime.Now - _lastEscTime).TotalSeconds < 1.5) {
                         _escCount++;
@@ -555,7 +535,7 @@ namespace EasyBlueStudio {
                     return (IntPtr)1;
                 }
 
-                // Check Configured Hotkeys
+                // Check Hotkeys
                 if (CheckHotkeyDown(_config.HotkeySwitch, kbd.vkCode)) {
                     ToggleMode();
                     return (IntPtr)1;
@@ -589,7 +569,6 @@ namespace EasyBlueStudio {
                     return (IntPtr)1;
                 }
 
-                // If currently controlling mobile, forward keys to dongle & suppress local Windows
                 if (_isMobileActive) {
                     byte mod = 0;
                     if ((GetAsyncKeyState(0x11) & 0x8000) != 0) mod |= 0x01; // Ctrl
@@ -601,11 +580,10 @@ namespace EasyBlueStudio {
                     if (hidCode != 0) {
                         _hardware.SendKeyboardReport(mod, new byte[] { hidCode });
                     }
-                    return (IntPtr)1; // Block local Windows processing
+                    return (IntPtr)1;
                 }
             } else if (nCode >= 0 && (wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP)) {
                 if (_isMobileActive) {
-                    // Send key release report
                     _hardware.SendKeyboardReport(0, new byte[] { 0 });
                     return (IntPtr)1;
                 }
@@ -619,7 +597,6 @@ namespace EasyBlueStudio {
                 MSLLHOOKSTRUCT ms = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
 
                 if (!_isMobileActive) {
-                    // PC Mode: Check edge boundary traversal to Mobile
                     if (_config.EdgeTraversalEnabled && wParam == (IntPtr)WM_MOUSEMOVE) {
                         double screenRight = SystemParameters.VirtualScreenWidth - 2;
                         double screenLeft = SystemParameters.VirtualScreenLeft + 2;
@@ -638,13 +615,10 @@ namespace EasyBlueStudio {
                         }
                     }
                 } else {
-                    // Mobile Mode: Mouse is controlling Mobile!
-                    // 1. Mouse Edge Bounce Return to PC:
                     if (_config.EdgeBounceReturnEnabled && wParam == (IntPtr)WM_MOUSEMOVE) {
                         int dx = ms.pt.x - _lastMousePos.x;
                         int dy = ms.pt.y - _lastMousePos.y;
 
-                        // Check if moving backwards towards PC
                         bool returnBounce = false;
                         if (_config.PhoneEdge == "Right" && dx < -35) returnBounce = true;
                         else if (_config.PhoneEdge == "Left" && dx > 35) returnBounce = true;
@@ -657,7 +631,6 @@ namespace EasyBlueStudio {
                         }
                     }
 
-                    // 2. Transmit delta to Mobile
                     if (wParam == (IntPtr)WM_MOUSEMOVE) {
                         int rawDx = (int)((ms.pt.x - _lastMousePos.x) * _config.MouseSpeed);
                         int rawDy = (int)((ms.pt.y - _lastMousePos.y) * _config.MouseSpeed);
@@ -666,8 +639,6 @@ namespace EasyBlueStudio {
                         sbyte sDy = (sbyte)Math.Max(-127, Math.Min(127, rawDy));
 
                         _hardware.SendMouseReport(0, sDx, sDy, 0);
-
-                        // Park cursor at screen boundary so it stays in place
                         SetCursorPos(_lastMousePos.x, _lastMousePos.y);
                         return (IntPtr)1;
                     } else if (wParam == (IntPtr)WM_LBUTTONDOWN) {
@@ -695,9 +666,8 @@ namespace EasyBlueStudio {
         }
 
         private byte ConvertVkToHid(byte vk) {
-            // Standard VK to USB HID Usage mapping
-            if (vk >= 0x41 && vk <= 0x5A) return (byte)(0x04 + (vk - 0x41)); // A-Z (0x04 - 0x1D)
-            if (vk >= 0x31 && vk <= 0x39) return (byte)(0x1E + (vk - 0x31)); // 1-9 (0x1E - 0x26)
+            if (vk >= 0x41 && vk <= 0x5A) return (byte)(0x04 + (vk - 0x41)); // A-Z
+            if (vk >= 0x31 && vk <= 0x39) return (byte)(0x1E + (vk - 0x31)); // 1-9
             if (vk == 0x30) return 0x27; // 0
             if (vk == 0x0D) return 0x28; // Enter
             if (vk == 0x1B) return 0x29; // Escape
@@ -709,7 +679,7 @@ namespace EasyBlueStudio {
             if (vk == 0x25) return 0x50; // Left
             if (vk == 0x28) return 0x51; // Down
             if (vk == 0x26) return 0x52; // Up
-            if (vk == 0x15) return 0x90; // Hangul / Kana toggle
+            if (vk == 0x15) return 0x90; // Hangul toggle
             return 0x00;
         }
 
@@ -733,7 +703,6 @@ namespace EasyBlueStudio {
     // MAIN APPLICATION WINDOW
     // =========================================================================
     public class MainWindow : Window {
-        // Theme Colors
         private static readonly Color BgDark = Color.FromRgb(24, 24, 28);
         private static readonly Color CardBg = Color.FromRgb(36, 36, 44);
         private static readonly Color CardBgHover = Color.FromRgb(48, 48, 58);
@@ -745,24 +714,22 @@ namespace EasyBlueStudio {
         private static readonly Color WarningYellow = Color.FromRgb(241, 196, 15);
         private static readonly Color BorderColor = Color.FromRgb(55, 55, 68);
 
-        // Core Objects
         private StudioConfig _config;
         private EasyBlueHardware _hardware;
         private EasyBlueInputHook _inputHook;
         private DispatcherTimer _pollTimer;
 
-        // UI Controls
         private Border _statusBadge;
         private TextBlock _statusBadgeText;
         private ContentControl _mainContentArea;
         private Button[] _navButtons;
         private int _currentTabIndex = 0;
 
-        // Floating Mobile Indicator Bar (Top of Screen)
         private Window _mobileIndicatorWindow;
         private System.Windows.Forms.NotifyIcon _trayIcon;
+        private System.Windows.Forms.ContextMenuStrip _trayMenu;
+        private bool _isExplicitExit = false;
 
-        // Visual Layout Canvas Elements
         private Canvas _layoutCanvas;
         private Border _phoneVisualCard;
         private TextBlock _phonePosLabel;
@@ -800,6 +767,22 @@ namespace EasyBlueStudio {
             };
             _pollTimer.Start();
             UpdateStatusBadge();
+
+            // Intercept window close to keep running in system tray
+            Closing += (s, e) => {
+                if (!_isExplicitExit) {
+                    e.Cancel = true;
+                    Hide();
+                    ShowTip("EasyBlue Studio 백그라운드 실행", "프로그램이 시스템 트레이에서 계속 실행 중입니다.\n트레이 아이콘을 클릭하여 언제든지 다시 열 수 있습니다.");
+                }
+            };
+
+            StateChanged += (s, e) => {
+                if (WindowState == WindowState.Minimized) {
+                    Hide();
+                    ShowTip("시스템 트레이 최소화", "트레이 아이콘을 클릭하면 창이 다시 복원됩니다.");
+                }
+            };
         }
 
         private void InitializeWindow() {
@@ -817,7 +800,6 @@ namespace EasyBlueStudio {
         }
 
         private void InitializeMobileIndicator() {
-            // Full-width subtle top neon bar when controlling mobile
             _mobileIndicatorWindow = new Window {
                 WindowStyle = WindowStyle.None,
                 AllowsTransparency = true,
@@ -879,6 +861,7 @@ namespace EasyBlueStudio {
                 if (_mobileIndicatorWindow != null) _mobileIndicatorWindow.Hide();
                 if (_trayIcon != null) _trayIcon.Text = "EasyBlue Studio (🖥️ PC 제어 중)";
             }
+            RefreshTrayMenuItems();
         }
 
         private void HandleHotkeyAction(string action) {
@@ -898,18 +881,16 @@ namespace EasyBlueStudio {
 
         private void BuildModernUI() {
             var rootGrid = new Grid();
-            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) }); // Title Bar
-            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // Body
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            // 1. Custom Title Bar
             var titleBar = CreateTitleBar();
             Grid.SetRow(titleBar, 0);
             rootGrid.Children.Add(titleBar);
 
-            // 2. Main Body Grid (Sidebar + Content Area)
             var bodyGrid = new Grid();
-            bodyGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) }); // Sidebar
-            bodyGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // View Area
+            bodyGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+            bodyGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             var sidebar = CreateSidebar();
             Grid.SetColumn(sidebar, 0);
@@ -985,7 +966,8 @@ namespace EasyBlueStudio {
             var btnMin = CreateIconBtn("—", () => WindowState = WindowState.Minimized);
             var btnClose = CreateIconBtn("✕", () => {
                 _config.Save();
-                Hide(); // Minimize to tray
+                Hide();
+                ShowTip("EasyBlue Studio 백그라운드 실행", "프로그램이 시스템 트레이에서 계속 실행 중입니다.");
             });
             btnPanel.Children.Add(btnMin);
             btnPanel.Children.Add(btnClose);
@@ -1050,7 +1032,6 @@ namespace EasyBlueStudio {
                 stack.Children.Add(btn);
             }
 
-            // Direct Switch Test Button at bottom of sidebar
             var toggleCard = new Border {
                 Margin = new Thickness(0, 24, 0, 0),
                 Background = new SolidColorBrush(CardBg),
@@ -1128,7 +1109,6 @@ namespace EasyBlueStudio {
             Grid.SetRow(header, 0);
             root.Children.Add(header);
 
-            // Canvas
             var canvasBorder = new Border {
                 Background = new SolidColorBrush(CardBg),
                 BorderBrush = new SolidColorBrush(BorderColor),
@@ -1144,7 +1124,6 @@ namespace EasyBlueStudio {
 
             _layoutCanvas.Loaded += (s, e) => RenderLayoutCanvas();
 
-            // Bottom control bar
             var bottomBar = new Border {
                 Background = new SolidColorBrush(Color.FromRgb(30, 30, 38)),
                 BorderBrush = new SolidColorBrush(BorderColor),
@@ -1205,7 +1184,6 @@ namespace EasyBlueStudio {
             double cw = _layoutCanvas.ActualWidth;
             double ch = _layoutCanvas.ActualHeight;
 
-            // PC Monitor Card (Center)
             double pcW = 260, pcH = 160;
             double pcX = (cw - pcW) / 2;
             double pcY = (ch - pcH) / 2;
@@ -1228,7 +1206,6 @@ namespace EasyBlueStudio {
             Canvas.SetTop(pcCard, pcY);
             _layoutCanvas.Children.Add(pcCard);
 
-            // Phone Visual Card
             double phW = 110, phH = 170;
             double phX = pcX + pcW + 36, phY = pcY - 5;
             if (_config.PhoneEdge == "Left") phX = pcX - phW - 36;
@@ -1262,22 +1239,11 @@ namespace EasyBlueStudio {
             var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             var stack = new StackPanel { Margin = new Thickness(8, 16, 8, 16) };
 
-            var header = new TextBlock {
-                Text = "📶 블루투스 페어링 및 디바이스 슬롯 관리",
-                FontSize = 18,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White
-            };
-            var desc = new TextBlock {
-                Text = "새로운 스마트폰을 페어링하거나, 최대 4개의 등록된 기기 슬롯을 직접 선택하고 관리합니다.",
-                FontSize = 12.5,
-                Foreground = new SolidColorBrush(TextSecondary),
-                Margin = new Thickness(0, 4, 0, 16)
-            };
+            var header = new TextBlock { Text = "📶 블루투스 페어링 및 디바이스 슬롯 관리", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = Brushes.White };
+            var desc = new TextBlock { Text = "새로운 스마트폰을 페어링하거나, 최대 4개의 등록된 기기 슬롯을 직접 선택하고 관리합니다.", FontSize = 12.5, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 4, 0, 16) };
             stack.Children.Add(header);
             stack.Children.Add(desc);
 
-            // 1. Pairing Mode Card
             var pairCard = new Border {
                 Background = new SolidColorBrush(CardBg),
                 BorderBrush = new SolidColorBrush(AccentCyan),
@@ -1325,7 +1291,6 @@ namespace EasyBlueStudio {
             pairCard.Child = pairGrid;
             stack.Children.Add(pairCard);
 
-            // 2. 4 Device Slots
             var slotsHeader = new TextBlock { Text = "등록된 디바이스 슬롯 (최대 4대 멀티 페어링)", FontWeight = FontWeights.Bold, FontSize = 14, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 8) };
             stack.Children.Add(slotsHeader);
 
@@ -1343,9 +1308,9 @@ namespace EasyBlueStudio {
                 };
 
                 var slotGrid = new Grid();
-                slotGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) }); // Icon
-                slotGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Info
-                slotGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Actions
+                slotGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+                slotGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                slotGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var iconTxt = new TextBlock {
                     Text = (slotIdx == 0 ? "📱" : (slotIdx == 1 ? "📟" : "📱")),
@@ -1376,6 +1341,7 @@ namespace EasyBlueStudio {
                 txtName.LostFocus += (s, e) => {
                     _config.DeviceSlots[slotIdx] = txtName.Text.Trim();
                     _config.Save();
+                    RefreshTrayMenuItems();
                 };
                 nameRow.Children.Add(txtName);
                 slotInfo.Children.Add(nameRow);
@@ -1404,7 +1370,8 @@ namespace EasyBlueStudio {
                     _hardware.SelectDeviceSlot(slotIdx);
                     _config.ActiveSlotIndex = slotIdx;
                     _config.Save();
-                    SwitchTab(1); // Refresh tab
+                    SwitchTab(1);
+                    RefreshTrayMenuItems();
                     ShowTip("디바이스 전환", "슬롯 " + (slotIdx + 1) + "번 장치로 전환 명령을 전송했습니다.");
                 };
                 actionRow.Children.Add(btnSelect);
@@ -1432,7 +1399,6 @@ namespace EasyBlueStudio {
                 stack.Children.Add(slotCard);
             }
 
-            // Factory Reset Pairing Button
             var resetCard = new Border {
                 Background = new SolidColorBrush(CardBg),
                 BorderBrush = new SolidColorBrush(BorderColor),
@@ -1478,18 +1444,8 @@ namespace EasyBlueStudio {
             var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             var stack = new StackPanel { Margin = new Thickness(8, 16, 8, 16) };
 
-            var header = new TextBlock {
-                Text = "⌨️ 단축키 설정 및 커스터마이징",
-                FontSize = 18,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White
-            };
-            var desc = new TextBlock {
-                Text = "PC와 모바일 간의 입력 전환, 복귀, 기기 직접 선택 단축키를 사용자의 취향에 맞춰 자유롭게 변경합니다.",
-                FontSize = 12.5,
-                Foreground = new SolidColorBrush(TextSecondary),
-                Margin = new Thickness(0, 4, 0, 16)
-            };
+            var header = new TextBlock { Text = "⌨️ 단축키 설정 및 커스터마이징", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = Brushes.White };
+            var desc = new TextBlock { Text = "PC와 모바일 간의 입력 전환, 복귀, 기기 직접 선택 단축키를 사용자의 취향에 맞춰 자유롭게 변경합니다.", FontSize = 12.5, Foreground = new SolidColorBrush(TextSecondary), Margin = new Thickness(0, 4, 0, 16) };
             stack.Children.Add(header);
             stack.Children.Add(desc);
 
@@ -1505,11 +1461,13 @@ namespace EasyBlueStudio {
             AddHotkeyRow(cardStack, "입력 전환 단축키 (PC ↔ 모바일 토글)", "PC 제어 중 스마트폰으로 넘어가거나 다시 토글하는 주 단축키", _config.HotkeySwitch, (newKey) => {
                 _config.HotkeySwitch = newKey;
                 _config.Save();
+                RefreshTrayMenuItems();
             });
 
             AddHotkeyRow(cardStack, "모바일에서 PC로 복귀 단축키", "모바일 제어 중 즉시 PC 제어 모드로 안전하게 복귀하는 단축키", _config.HotkeyReturn, (newKey) => {
                 _config.HotkeyReturn = newKey;
                 _config.Save();
+                RefreshTrayMenuItems();
             });
 
             AddHotkeyRow(cardStack, "블루투스 연결 끊기 단축키", "진행 중인 블루투스 무선 연결을 즉시 종료하는 단축키", _config.HotkeyDisconnect, (newKey) => {
@@ -1670,7 +1628,6 @@ namespace EasyBlueStudio {
             };
             var cardStack = new StackPanel();
 
-            // 1. Mouse Speed
             var s1 = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
             var s1Txt = new StackPanel();
             s1Txt.Children.Add(new TextBlock { Text = "모바일 마우스 속도 배율", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
@@ -1697,7 +1654,6 @@ namespace EasyBlueStudio {
             s1.Children.Add(slider);
             cardStack.Children.Add(s1);
 
-            // 2. Edge Traversal Toggle
             var s2 = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
             var s2Txt = new StackPanel();
             s2Txt.Children.Add(new TextBlock { Text = "마우스 화면 경계 이동 활성화 (Flow)", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
@@ -1705,13 +1661,12 @@ namespace EasyBlueStudio {
             s2.Children.Add(s2Txt);
 
             var chkEdge = new CheckBox { IsChecked = _config.EdgeTraversalEnabled, VerticalAlignment = VerticalAlignment.Center };
-            chkEdge.Checked += (s, e) => { _config.EdgeTraversalEnabled = true; _config.Save(); };
-            chkEdge.Unchecked += (s, e) => { _config.EdgeTraversalEnabled = false; _config.Save(); };
+            chkEdge.Checked += (s, e) => { _config.EdgeTraversalEnabled = true; _config.Save(); RefreshTrayMenuItems(); };
+            chkEdge.Unchecked += (s, e) => { _config.EdgeTraversalEnabled = false; _config.Save(); RefreshTrayMenuItems(); };
             DockPanel.SetDock(chkEdge, Dock.Right);
             s2.Children.Add(chkEdge);
             cardStack.Children.Add(s2);
 
-            // 3. Edge Bounce Return Toggle
             var s3 = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
             var s3Txt = new StackPanel();
             s3Txt.Children.Add(new TextBlock { Text = "마우스 역방향 튕김으로 PC 복귀 (Bounce Return)", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
@@ -1725,7 +1680,6 @@ namespace EasyBlueStudio {
             s3.Children.Add(chkBounce);
             cardStack.Children.Add(s3);
 
-            // 4. Hardware LED Toggle
             var s4 = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
             var s4Txt = new StackPanel();
             s4Txt.Children.Add(new TextBlock { Text = "이지블루 동글 LED 켜기", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
@@ -1737,17 +1691,18 @@ namespace EasyBlueStudio {
                 _config.LedEnabled = true;
                 _hardware.SetLed(true);
                 _config.Save();
+                RefreshTrayMenuItems();
             };
             chkLed.Unchecked += (s, e) => {
                 _config.LedEnabled = false;
                 _hardware.SetLed(false);
                 _config.Save();
+                RefreshTrayMenuItems();
             };
             DockPanel.SetDock(chkLed, Dock.Right);
             s4.Children.Add(chkLed);
             cardStack.Children.Add(s4);
 
-            // 5. Input Mode Selector (Combo / KB only / Mouse only)
             var s5 = new DockPanel();
             var s5Txt = new StackPanel();
             s5Txt.Children.Add(new TextBlock { Text = "동글 입력 프로필 모드", FontWeight = FontWeights.Bold, Foreground = Brushes.White });
@@ -1787,7 +1742,6 @@ namespace EasyBlueStudio {
             stack.Children.Add(header);
             stack.Children.Add(desc);
 
-            // Remote Buttons
             var deckCard = new Border {
                 Background = new SolidColorBrush(CardBg),
                 BorderBrush = new SolidColorBrush(BorderColor),
@@ -1800,10 +1754,10 @@ namespace EasyBlueStudio {
             deckStack.Children.Add(new TextBlock { Text = "스마트폰 시스템 제어", FontWeight = FontWeights.Bold, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 12) });
 
             var row1 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-            row1.Children.Add(CreateDeckBtn("🏠 홈 (Home)", () => _hardware.SendKeyboardReport(0x08, null))); // Win key
-            row1.Children.Add(CreateDeckBtn("◀ 뒤로가기 (Back)", () => _hardware.SendKeyboardReport(0, new byte[] { 0x29 }))); // ESC
-            row1.Children.Add(CreateDeckBtn("📑 최근 앱 (Recents)", () => _hardware.SendKeyboardReport(0x04, new byte[] { 0x2B }))); // Alt+Tab
-            row1.Children.Add(CreateDeckBtn("🔒 화면 잠금/켜기", () => _hardware.SendKeyboardReport(0x08, new byte[] { 0x0F }))); // Win+L
+            row1.Children.Add(CreateDeckBtn("🏠 홈 (Home)", () => _hardware.SendKeyboardReport(0x08, null)));
+            row1.Children.Add(CreateDeckBtn("◀ 뒤로가기 (Back)", () => _hardware.SendKeyboardReport(0, new byte[] { 0x29 })));
+            row1.Children.Add(CreateDeckBtn("📑 최근 앱 (Recents)", () => _hardware.SendKeyboardReport(0x04, new byte[] { 0x2B })));
+            row1.Children.Add(CreateDeckBtn("🔒 화면 잠금/켜기", () => _hardware.SendKeyboardReport(0x08, new byte[] { 0x0F })));
             deckStack.Children.Add(row1);
 
             var row2 = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1816,7 +1770,6 @@ namespace EasyBlueStudio {
             deckCard.Child = deckStack;
             stack.Children.Add(deckCard);
 
-            // Text Streamer
             var textCard = new Border {
                 Background = new SolidColorBrush(CardBg),
                 BorderBrush = new SolidColorBrush(BorderColor),
@@ -1880,7 +1833,6 @@ namespace EasyBlueStudio {
 
         private void StreamClipboardToMobile() {
             try {
-                // Switch to mobile briefly and send Paste command
                 _inputHook.SwitchToMobile();
                 _hardware.SendKeyboardReport(0x01, new byte[] { 0x19 }); // Ctrl+V
                 Thread.Sleep(50);
@@ -1948,42 +1900,174 @@ namespace EasyBlueStudio {
             }
         }
 
+        // =========================================================================
+        // SYSTEM TRAY & BACKGROUND CONTROLS
+        // =========================================================================
+        private static System.Drawing.Icon CreateAppIcon() {
+            try {
+                using (var bmp = new System.Drawing.Bitmap(32, 32)) {
+                    using (var g = System.Drawing.Graphics.FromImage(bmp)) {
+                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                        // Background circle: deep navy
+                        using (var brush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(16, 24, 40))) {
+                            g.FillEllipse(brush, 1, 1, 30, 30);
+                        }
+                        // Neon Cyan border
+                        using (var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(0, 220, 255), 2f)) {
+                            g.DrawEllipse(pen, 1, 1, 30, 30);
+                        }
+                        // "EB" Text
+                        using (var font = new System.Drawing.Font("Segoe UI", 11f, System.Drawing.FontStyle.Bold))
+                        using (var textBrush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0, 220, 255))) {
+                            var sf = new System.Drawing.StringFormat {
+                                Alignment = System.Drawing.StringAlignment.Center,
+                                LineAlignment = System.Drawing.StringAlignment.Center
+                            };
+                            g.DrawString("EB", font, textBrush, new System.Drawing.RectangleF(0, 0, 32, 32), sf);
+                        }
+                    }
+                    IntPtr hIcon = bmp.GetHicon();
+                    return System.Drawing.Icon.FromHandle(hIcon);
+                }
+            } catch {
+                return System.Drawing.SystemIcons.Application;
+            }
+        }
+
         private void InitializeTray() {
+            var appIcon = CreateAppIcon();
             _trayIcon = new System.Windows.Forms.NotifyIcon {
                 Text = "EasyBlue Studio 2026",
-                Icon = System.Drawing.SystemIcons.Application,
+                Icon = appIcon,
                 Visible = true
             };
 
-            var menu = new System.Windows.Forms.ContextMenuStrip();
-            menu.Items.Add("🖥️ EasyBlue Studio 열기", null, (s, e) => { Show(); WindowState = WindowState.Normal; Activate(); });
-            menu.Items.Add("🔄 PC ↔ 모바일 전환 (" + _config.HotkeySwitch + ")", null, (s, e) => _inputHook.ToggleMode());
-            menu.Items.Add("📶 페어링 대기 모드 시작", null, (s, e) => _hardware.EnterPairingMode());
-            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+            // Left click or double click restores window
+            _trayIcon.MouseClick += (s, e) => {
+                if (e.Button == System.Windows.Forms.MouseButtons.Left) {
+                    RestoreWindow();
+                }
+            };
+            _trayIcon.DoubleClick += (s, e) => RestoreWindow();
+
+            _trayMenu = new System.Windows.Forms.ContextMenuStrip();
+            _trayMenu.Opening += (s, e) => RefreshTrayMenuItems();
+            _trayIcon.ContextMenuStrip = _trayMenu;
+
+            RefreshTrayMenuItems();
+        }
+
+        private void RefreshTrayMenuItems() {
+            if (_trayMenu == null) return;
+            _trayMenu.Items.Clear();
+
+            // 1. Header (Title & Status)
+            var titleItem = new System.Windows.Forms.ToolStripMenuItem("⚡ EasyBlue Studio 2026") {
+                Font = new System.Drawing.Font("Segoe UI", 9.5f, System.Drawing.FontStyle.Bold),
+                Enabled = false
+            };
+            _trayMenu.Items.Add(titleItem);
+
+            string modeText = _inputHook.IsMobileActive ? "● 📱 현재: 모바일 제어 중" : "● 🖥️ 현재: PC 제어 중";
+            var modeItem = new System.Windows.Forms.ToolStripMenuItem(modeText) {
+                ForeColor = _inputHook.IsMobileActive ? System.Drawing.Color.FromArgb(0, 180, 255) : System.Drawing.Color.FromArgb(46, 204, 113),
+                Enabled = false
+            };
+            _trayMenu.Items.Add(modeItem);
+
+            _trayMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
+            // 2. Window Restore
+            var openItem = new System.Windows.Forms.ToolStripMenuItem("🖥️ EasyBlue Studio 열기", null, (s, e) => RestoreWindow()) {
+                Font = new System.Drawing.Font("Segoe UI", 9f, System.Drawing.FontStyle.Bold)
+            };
+            _trayMenu.Items.Add(openItem);
+
+            // 3. Switch & Return Actions
+            _trayMenu.Items.Add("🔄 PC ↔ 모바일 전환 (" + _config.HotkeySwitch + ")", null, (s, e) => _inputHook.ToggleMode());
+            if (_inputHook.IsMobileActive) {
+                _trayMenu.Items.Add("🖥️ PC로 즉시 복귀 (" + _config.HotkeyReturn + " / ESC)", null, (s, e) => _inputHook.SwitchToPC());
+            } else {
+                _trayMenu.Items.Add("📱 모바일 제어로 전환", null, (s, e) => _inputHook.SwitchToMobile());
+            }
+
+            _trayMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
+            // 4. Bluetooth Pairing & Slots
+            _trayMenu.Items.Add("📶 페어링 대기 모드 시작", null, (s, e) => {
+                _hardware.EnterPairingMode();
+                ShowTip("페어링 대기", "스마트폰 블루투스에서 'EasyBlue'를 검색하세요.");
+            });
 
             var slotSubmenu = new System.Windows.Forms.ToolStripMenuItem("📱 디바이스 슬롯 선택");
             for (int i = 0; i < 4; i++) {
                 int sIdx = i;
-                slotSubmenu.DropDownItems.Add("슬롯 " + (sIdx + 1) + ": " + _config.DeviceSlots[sIdx], null, (s, e) => {
+                bool isCur = (_config.ActiveSlotIndex == sIdx);
+                var slotItem = new System.Windows.Forms.ToolStripMenuItem("슬롯 " + (sIdx + 1) + ": " + _config.DeviceSlots[sIdx]) {
+                    Checked = isCur
+                };
+                slotItem.Click += (s, e) => {
                     _hardware.SelectDeviceSlot(sIdx);
                     _config.ActiveSlotIndex = sIdx;
                     _config.Save();
-                });
+                    ShowTip("디바이스 전환", "슬롯 " + (sIdx + 1) + "번으로 전환했습니다.");
+                };
+                slotSubmenu.DropDownItems.Add(slotItem);
             }
-            menu.Items.Add(slotSubmenu);
+            _trayMenu.Items.Add(slotSubmenu);
 
-            menu.Items.Add("🔌 블루투스 연결 해제", null, (s, e) => _hardware.DisconnectDevice());
-            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-            menu.Items.Add("✕ 완전히 종료", null, (s, e) => {
-                _inputHook.Dispose();
-                _hardware.Dispose();
-                _trayIcon.Visible = false;
-                _trayIcon.Dispose();
-                Application.Current.Shutdown();
+            // 5. Quick Controls
+            _trayMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
+            var ledItem = new System.Windows.Forms.ToolStripMenuItem("💡 동글 LED 켜기") {
+                Checked = _config.LedEnabled
+            };
+            ledItem.Click += (s, e) => {
+                _config.LedEnabled = !_config.LedEnabled;
+                _hardware.SetLed(_config.LedEnabled);
+                _config.Save();
+            };
+            _trayMenu.Items.Add(ledItem);
+
+            var edgeItem = new System.Windows.Forms.ToolStripMenuItem("🖱️ 마우스 화면 경계 이동 (Flow)") {
+                Checked = _config.EdgeTraversalEnabled
+            };
+            edgeItem.Click += (s, e) => {
+                _config.EdgeTraversalEnabled = !_config.EdgeTraversalEnabled;
+                _config.Save();
+            };
+            _trayMenu.Items.Add(edgeItem);
+
+            _trayMenu.Items.Add("🚀 스마트 클립보드 붙여넣기 (" + _config.HotkeyPaste + ")", null, (s, e) => StreamClipboardToMobile());
+            _trayMenu.Items.Add("🔌 블루투스 연결 해제 (" + _config.HotkeyDisconnect + ")", null, (s, e) => _hardware.DisconnectDevice());
+
+            // 6. Preferences & Exit
+            _trayMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+            _trayMenu.Items.Add("⚙️ 환경설정", null, (s, e) => {
+                RestoreWindow();
+                SwitchTab(3);
             });
 
-            _trayIcon.ContextMenuStrip = menu;
-            _trayIcon.DoubleClick += (s, e) => { Show(); WindowState = WindowState.Normal; Activate(); };
+            _trayMenu.Items.Add("✕ 완전히 종료", null, (s, e) => {
+                _isExplicitExit = true;
+                _config.Save();
+                _inputHook.Dispose();
+                _hardware.Dispose();
+                if (_trayIcon != null) {
+                    _trayIcon.Visible = false;
+                    _trayIcon.Dispose();
+                }
+                Application.Current.Shutdown();
+            });
+        }
+
+        private void RestoreWindow() {
+            Show();
+            WindowState = WindowState.Normal;
+            Activate();
+            Topmost = true;
+            Topmost = false;
+            Focus();
         }
 
         private void ShowTip(string title, string text) {
