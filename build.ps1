@@ -1,8 +1,12 @@
 ﻿$csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-$srcDir = "G:\내 드라이브\Antigravity\ETC\EasyBlue-Modern\01_EasyBlue_Modern_Manager"
-$csFile = "$srcDir\EasyBlueStudio.cs"
-$manifest = "$srcDir\app.manifest"
-$outFile = "$srcDir\EasyBlueStudio.exe"
+$scriptDir = $PSScriptRoot
+if (-not $scriptDir) { $scriptDir = (Get-Location).Path }
+
+$csFile = Join-Path $scriptDir "src\EasyBlueStudio.cs"
+$manifest = Join-Path $scriptDir "app.manifest"
+$binDir = Join-Path $scriptDir "bin"
+if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
+$outFile = Join-Path $binDir "EasyBlueStudio.exe"
 $wpfLib = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\WPF"
 
 $refs = @(
