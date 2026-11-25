@@ -262,12 +262,12 @@ namespace EasyBlueStudio {
             } catch { }
         }
 
-        public bool SendCommand(ushort cmdCode, ushort subParam, byte[] extraData) {
+        public bool SendCommand(ushort cmdCode, ushort subParam, byte[] extraData, byte reportId = 0x01) {
             if (_hidHandle == IntPtr.Zero) return false;
 
-            // EasyBlue vendor HID feature report: 513 bytes, ReportID 0x01
+            // EasyBlue vendor HID feature report: 513 bytes
             byte[] packet = new byte[513];
-            packet[0] = 0x01; // Report ID
+            packet[0] = reportId; // Report ID (0x01, 0x02, or 0x03)
             packet[1] = 0xBF; // Magic little-endian
             packet[2] = 0x2A;
             packet[3] = 0x38; // Payload length (56 bytes)
@@ -282,21 +282,91 @@ namespace EasyBlueStudio {
                 Array.Copy(extraData, 0, packet, 9, copyLen);
             }
 
-            bool ok = HidD_SetFeature(_hidHandle, packet, packet.Length);
+            return HidD_SetFeature(_hidHandle, packet, packet.Length);
+        }
+
+        public bool SendRawFeatureReport(byte[] report) {
+            if (_hidHandle == IntPtr.Zero || report == null) return false;
+            byte[] packet = new byte[513];
+            Array.Copy(report, 0, packet, 0, Math.Min(report.Length, 513));
+            return HidD_SetFeature(_hidHandle, packet, packet.Length);
+        }
+
+        public bool ClearPairingSlot(int slotIndex) {
+            if (slotIndex < 0 || slotIndex > 4) return false;
+            ushort cmd = (ushort)(0x8200 | slotIndex);
+            return SendCommand(cmd, 0x0000, null, 0x01);
+        }
+
+        public bool ClearAllPairings() {
+            bool ok = true;
+            for (int s = 1; s <= 4; s++) {
+                ClearPairingSlot(s);
+                Thread.Sleep(30);
+            }
+            ClearPairingSlot(0); // Clear all
             return ok;
         }
 
-        public bool EnterPairingMode() {
-            // Send 0x8300 (Pairing Inquiry) and 0x8200 (Discoverable Mode)
-            bool ok1 = SendCommand(0x8300, 0x0002, null);
+        public bool EnterPairingMode(int targetSlot = 0) {
+            if (_hidHandle == IntPtr.Zero) return false;
+
+            // Full reverse-engineered EasyBlue multi-stage pairing sequence:
+            // 1. Reset / Init command (0x8000)
+            SendCommand(0x8000, 0x0000, null, 0x01);
             Thread.Sleep(50);
-            bool ok2 = SendCommand(0x8200, 0x0001, null);
-            return ok1 || ok2;
+
+            // 2. Clear target slot or clear history if needed
+            if (targetSlot > 0 && targetSlot <= 4) {
+                ClearPairingSlot(targetSlot);
+                Thread.Sleep(30);
+            } else {
+                ClearAllPairings();
+                Thread.Sleep(30);
+            }
+
+            // 3. Broadcast Pairing / Discoverable Mode (0x8300) across all report endpoints
+            SendCommand(0x8300, 0x0000, null, 0x01);
+            SendCommand(0x8300, 0x0000, null, 0x02);
+            SendCommand(0x8300, 0x0000, null, 0x03);
+            Thread.Sleep(50);
+
+            // 4. Send Pairing Start / Slot Selection (0x8310)
+            ushort slotVal = (ushort)(targetSlot > 0 ? targetSlot : 0);
+            SendCommand(0x8310, slotVal, null, 0x01);
+            SendCommand(0x8310, slotVal, null, 0x02);
+            SendCommand(0x8310, slotVal, null, 0x03);
+            Thread.Sleep(50);
+
+            // 5. Send EasyBlue 2.1 Protocol Config Packet (0xEB01)
+            byte[] cfg = new byte[32];
+            cfg[0] = 0x02; // Report ID 2
+            cfg[1] = 0x01; cfg[2] = 0xEB; // Magic 0xEB01
+            cfg[3] = 0x00; cfg[4] = 0x80; // 0x8000
+            cfg[7] = 0x07;                // Inquiry scan + page scan flags
+            cfg[9] = 0x00; cfg[10] = 0x40;
+            cfg[11] = 0x00; cfg[12] = 0x41;
+            cfg[13] = 0x00; cfg[14] = 0x42;
+            cfg[15] = 0x00; cfg[16] = 0x43;
+            cfg[17] = 0x00; cfg[18] = 0x44;
+            cfg[19] = 0x00; cfg[20] = 0x45;
+            cfg[21] = 0x02; cfg[22] = 0xD0; // CoD: Peripheral Keyboard/Mouse
+            SendRawFeatureReport(cfg);
+            Thread.Sleep(30);
+
+            // 6. Send EasyBlue 2.1 State Packet (0xEB04 / 0x7000)
+            byte[] state = new byte[16];
+            state[0] = 0x01;
+            state[1] = 0x04; state[2] = 0xEB;
+            state[3] = 0x00; state[4] = 0x70;
+            SendRawFeatureReport(state);
+
+            return true;
         }
 
         public bool SelectDeviceSlot(int slotIndex) {
             byte[] slotData = new byte[] { (byte)slotIndex };
-            return SendCommand(0x8310, (ushort)slotIndex, slotData);
+            return SendCommand(0x8310, (ushort)slotIndex, slotData, 0x01);
         }
 
         public bool DisconnectDevice() {
