@@ -231,6 +231,7 @@ namespace EasyBlueStudio {
                                     _devicePath = path;
                                     _isConnected = true;
                                     CheckSecurityDrives();
+                                    WakeUpRadio();
                                     return true;
                                 }
                             }
@@ -326,59 +327,38 @@ namespace EasyBlueStudio {
             return HidD_SetFeature(_hidHandle, packet, packet.Length);
         }
 
+        private bool _radioAwake = false;
+
+        public void WakeUpRadio() {
+            if (_hidHandle == IntPtr.Zero) return;
+            // Ver 2.1 Slot 4: Power-cycle / initialize Broadcom Bluetooth chip (0xEB01 / 0x7FFF / 0 -> 1)
+            SendVer21Packet(0x01, 0xEB01, 0x7FFF, 0x0000, 0x0001, new byte[] { 0x00, 0x00 });
+            Thread.Sleep(50);
+            SendVer21Packet(0x01, 0xEB01, 0x7FFF, 0x0000, 0x0001, new byte[] { 0x01, 0x00 });
+            Thread.Sleep(350);
+            _radioAwake = true;
+        }
+
         public bool EnterPairingMode(int targetSlot = 0) {
             if (_hidHandle == IntPtr.Zero) return false;
 
-            // VID_1D54&PID_B002 uses EasyBlue Interface Ver 2.1 (0xEB01 / 0xEB04)
-            // 1. Init / Wakeup (Slot 4: 0xEB01 / 0x7FFF)
-            SendVer21Packet(0x01, 0xEB01, 0x7FFF, 0x0000, 0x0000);
-            Thread.Sleep(40);
+            // 1. Ensure Broadcom BT radio is initialized (wBcmStat bit 15 = 1)
+            if (!_radioAwake) {
+                WakeUpRadio();
+            }
 
-            // 2. Device_CommDisc: Disconnect active BT link so radio returns to inquiry/page standby (Slot 11)
+            // 2. Disconnect active BT link if any (Slot 11: Device_CommDisc)
             SendVer21Packet(0x01, 0xEB01, 0x8000, 0x0000, 0x0001, new byte[] { 0x00, 0xC0 });
-            Thread.Sleep(80);
+            Thread.Sleep(100);
 
-            // 3. Device_EEP_Enable(1) (Slot 18: 0xEB04 / 0x7000 / param=1)
-            byte[] eepOn = new byte[16];
-            eepOn[0] = 0x01; eepOn[1] = 0x04; eepOn[2] = 0xEB;
-            eepOn[3] = 0x00; eepOn[4] = 0x70;
-            eepOn[5] = 0x01; eepOn[6] = 0x00;
-            SendRawFeatureReport(eepOn);
-            Thread.Sleep(40);
-
-            // 4. Clear target BDADDR / enter pairing config (Slot 10: 0xEB01 / 0x8000 / 0x0007)
-            byte[] slot10 = new byte[32];
-            slot10[0] = 0x02; // Report ID 2 (len 32)
-            slot10[1] = 0x01; slot10[2] = 0xEB; // 0xEB01
-            slot10[3] = 0x00; slot10[4] = 0x80; // 0x8000
-            slot10[5] = 0x00; slot10[6] = 0x00;
-            slot10[7] = 0x07; slot10[8] = 0x00; // 0x0007
-            slot10[9] = 0x00; slot10[10] = 0x40;
-            slot10[11] = 0x00; slot10[12] = 0x41;
-            slot10[13] = 0x00; slot10[14] = 0x42;
-            slot10[15] = 0x00; slot10[16] = 0x43;
-            slot10[17] = 0x00; slot10[18] = 0x44;
-            slot10[19] = 0x00; slot10[20] = 0x45;
-            slot10[25] = 0x02; slot10[26] = 0xD0; // 0xD002
-            SendRawFeatureReport(slot10);
-            Thread.Sleep(40);
-
-            // 5. Device_EEP_Enable(0) (Slot 18: 0xEB04 / 0x7000 / param=0)
-            byte[] eepOff = new byte[16];
-            eepOff[0] = 0x01; eepOff[1] = 0x04; eepOff[2] = 0xEB;
-            eepOff[3] = 0x00; eepOff[4] = 0x70;
-            eepOff[5] = 0x00; eepOff[6] = 0x00;
-            SendRawFeatureReport(eepOff);
-            Thread.Sleep(40);
-
-            // 6. Radio / Mode refresh pulse (Slot 6: 0x23C0 -> 200ms -> 0x23C1)
-            SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0002, new byte[] { 0xC0, 0x23 });
+            // 3. Trigger Discoverable / Pairing Mode (Slot 6: 0x23C0 -> 200ms -> 0x23C1, wBcmStat -> 0x8002)
+            bool ok1 = SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { 0xC0, 0x23 });
             Thread.Sleep(200);
-            SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0002, new byte[] { 0xC1, 0x23 });
+            bool ok2 = SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { 0xC1, 0x23 });
 
-            // 7. Legacy Ver 1.0 fallback (0x2ABF) for PID_B001 compatibility
+            // 4. Legacy Ver 1.0 fallback (0x2ABF) for PID_B001 compatibility
             SendCommand(0x8300, 0x0000, null, 0x01);
-            return true;
+            return ok1 || ok2;
         }
 
         public bool SelectDeviceSlot(int slotIndex) {
