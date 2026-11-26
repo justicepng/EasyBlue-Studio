@@ -177,6 +177,24 @@ namespace EasyBlueStudio {
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool WriteFile(IntPtr hFile, byte[] lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool ReadFile(IntPtr hFile, byte[] lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, ref NativeOverlapped lpOverlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetOverlappedResult(IntPtr hFile, ref NativeOverlapped lpOverlapped, out uint lpNumberOfBytesTransferred, bool bWait);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateEvent(IntPtr lpEventAttributes, bool bManualReset, bool bInitialState, string lpName);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool ResetEvent(IntPtr hEvent);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CancelIo(IntPtr hFile);
+
         [StructLayout(LayoutKind.Sequential)]
         private struct SP_DEVICE_INTERFACE_DATA {
             public uint cbSize;
@@ -192,8 +210,11 @@ namespace EasyBlueStudio {
         private const uint FILE_SHARE_READ = 0x00000001;
         private const uint FILE_SHARE_WRITE = 0x00000002;
         private const uint OPEN_EXISTING = 3;
+        private const uint FILE_FLAG_OVERLAPPED = 0x40000000;
 
         private IntPtr _hidHandle = IntPtr.Zero;
+        private IntPtr _hidEvent = IntPtr.Zero;
+        private readonly object _ioLock = new object();
         private bool _isConnected = false;
         private bool _isPureHidMode = false;
         private string _devicePath = null;
@@ -225,9 +246,10 @@ namespace EasyBlueStudio {
                             IntPtr pDevicePath = new IntPtr(detailData.ToInt64() + 4);
                             string path = Marshal.PtrToStringAuto(pDevicePath);
                             if (path != null && path.IndexOf("vid_1d54&pid_b002", StringComparison.OrdinalIgnoreCase) >= 0) {
-                                IntPtr handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+                                IntPtr handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, IntPtr.Zero);
                                 if (handle != IntPtr.Zero && handle != (IntPtr)(-1)) {
                                     _hidHandle = handle;
+                                    _hidEvent = CreateEvent(IntPtr.Zero, true, false, null);
                                     _devicePath = path;
                                     _isConnected = true;
                                     CheckSecurityDrives();
@@ -309,22 +331,59 @@ namespace EasyBlueStudio {
             return ok;
         }
 
-        private bool SendVer21Packet(byte reportId, ushort cmd, ushort sub, ushort lenWord, ushort tag, byte[] extra = null) {
+        private bool SendVer21Packet(byte reportId, ushort cmd, ushort sub, ushort lenWord, ushort tag, byte[] extra = null, byte[] responseOut = null) {
             if (_hidHandle == IntPtr.Zero) return false;
-            byte[] packet = new byte[513];
-            packet[0] = reportId;
-            packet[1] = (byte)(cmd & 0xFF);
-            packet[2] = (byte)(cmd >> 8);
-            packet[3] = (byte)(sub & 0xFF);
-            packet[4] = (byte)(sub >> 8);
-            packet[5] = (byte)(lenWord & 0xFF);
-            packet[6] = (byte)(lenWord >> 8);
-            packet[7] = (byte)(tag & 0xFF);
-            packet[8] = (byte)(tag >> 8);
-            if (extra != null && extra.Length > 0) {
-                Array.Copy(extra, 0, packet, 9, Math.Min(extra.Length, 500));
+            lock (_ioLock) {
+                byte[] packet = new byte[513];
+                packet[0] = reportId;
+                packet[1] = (byte)(cmd & 0xFF);
+                packet[2] = (byte)(cmd >> 8);
+                packet[3] = (byte)(sub & 0xFF);
+                packet[4] = (byte)(sub >> 8);
+                packet[5] = (byte)(lenWord & 0xFF);
+                packet[6] = (byte)(lenWord >> 8);
+                packet[7] = (byte)(tag & 0xFF);
+                packet[8] = (byte)(tag >> 8);
+                if (extra != null && extra.Length > 0) {
+                    Array.Copy(extra, 0, packet, 9, Math.Min(extra.Length, 500));
+                }
+
+                byte[] inBuf = responseOut ?? new byte[513];
+                NativeOverlapped ov = new NativeOverlapped();
+                bool hasOv = (_hidEvent != IntPtr.Zero);
+                bool readPending = false;
+                uint bytesRead = 0;
+
+                if (hasOv) {
+                    ResetEvent(_hidEvent);
+                    ov.EventHandle = _hidEvent;
+                    bool rOk = ReadFile(_hidHandle, inBuf, (uint)inBuf.Length, out bytesRead, ref ov);
+                    if (!rOk && Marshal.GetLastWin32Error() == 997) {
+                        readPending = true;
+                    }
+                }
+
+                bool setOk = HidD_SetFeature(_hidHandle, packet, packet.Length);
+
+                if (readPending) {
+                    if (WaitForSingleObject(_hidEvent, 250) == 0) {
+                        GetOverlappedResult(_hidHandle, ref ov, out bytesRead, false);
+                    } else {
+                        CancelIo(_hidHandle);
+                    }
+                }
+                return setOk;
             }
-            return HidD_SetFeature(_hidHandle, packet, packet.Length);
+        }
+
+        public ushort GetBcmStatus() {
+            byte[] resp = new byte[513];
+            if (SendVer21Packet(0x01, 0xEB01, 0xFFFF, 0x0000, 0x0000, null, resp)) {
+                if (resp[1] == 0x01 && resp[2] == 0xEB && resp[3] == 0xFF && resp[4] == 0xFF && resp[5] == 0x01) {
+                    return (ushort)(resp[9] | (resp[10] << 8));
+                }
+            }
+            return 0;
         }
 
         private bool _radioAwake = false;
@@ -400,11 +459,11 @@ namespace EasyBlueStudio {
 
         public bool SendHidKeyPulse(byte hidKey) {
             if (_hidHandle == IntPtr.Zero || hidKey == 0) return false;
-            // Ver 2.1 Slot 6: 0x2400 | hidKey (Key Down) -> 20ms -> 0x2500 | hidKey (Key Up)
+            // Ver 2.1 Slot 6: 0x2400 | hidKey (Key Down) -> 40ms -> 0x2500 | hidKey (Key Up)
             bool okDown = SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { hidKey, 0x24 });
-            Thread.Sleep(20);
+            Thread.Sleep(40);
             bool okUp = SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { hidKey, 0x25 });
-            Thread.Sleep(20);
+            Thread.Sleep(40);
             return okDown || okUp;
         }
 
@@ -2192,8 +2251,8 @@ namespace EasyBlueStudio {
         private void ShowPairingPinDialog() {
             var dlg = new Window {
                 Title = "EasyBlue 페어링 PIN 코드 입력",
-                Width = 420,
-                Height = 250,
+                Width = 450,
+                SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
                 Topmost = true,
@@ -2201,7 +2260,7 @@ namespace EasyBlueStudio {
                 Foreground = Brushes.White
             };
 
-            var root = new StackPanel { Margin = new Thickness(22, 18, 22, 18) };
+            var root = new StackPanel { Margin = new Thickness(24, 20, 24, 22) };
             root.Children.Add(new TextBlock {
                 Text = "📶 블루투스 페어링 대기 중입니다",
                 FontSize = 15,
@@ -2209,7 +2268,7 @@ namespace EasyBlueStudio {
                 Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248))
             });
             root.Children.Add(new TextBlock {
-                Text = "스마트폰에서 'EasyBlue'를 선택하면 화면에 숫자 PIN 코드가 표시됩니다.\n아래 입력창에 해당 PIN 코드를 입력하고 [Enter] 또는 [전송]을 누르세요.",
+                Text = "스마트폰에서 'EasyBlue'를 선택하면 화면에 숫자 PIN 코드가 표시됩니다.\n아래 입력창에 해당 PIN 코드를 입력하고 [Enter] 또는 [PIN 전송]을 누르세요.",
                 FontSize = 12,
                 Foreground = new SolidColorBrush(Color.FromRgb(180, 192, 210)),
                 TextWrapping = TextWrapping.Wrap,
@@ -2217,8 +2276,8 @@ namespace EasyBlueStudio {
             });
 
             var pinBox = new TextBox {
-                Height = 38,
-                FontSize = 20,
+                Height = 42,
+                FontSize = 22,
                 FontWeight = FontWeights.Bold,
                 HorizontalContentAlignment = HorizontalAlignment.Center,
                 VerticalContentAlignment = VerticalAlignment.Center,
@@ -2232,10 +2291,11 @@ namespace EasyBlueStudio {
             root.Children.Add(pinBox);
 
             var statusTxt = new TextBlock {
-                Text = "",
-                FontSize = 11.5,
-                Foreground = new SolidColorBrush(Color.FromRgb(74, 222, 128)),
-                Margin = new Thickness(0, 8, 0, 0),
+                Text = "대기 상태: 스마트폰에서 'EasyBlue'를 선택하세요.",
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                Margin = new Thickness(0, 10, 0, 0),
+                TextWrapping = TextWrapping.Wrap,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
             root.Children.Add(statusTxt);
@@ -2243,32 +2303,53 @@ namespace EasyBlueStudio {
             var btnPanel = new StackPanel {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 12, 0, 0)
+                Margin = new Thickness(0, 16, 0, 0)
             };
 
             var sendBtn = new Button {
                 Content = "PIN 전송 (Enter)",
-                Width = 130,
-                Height = 34,
+                Width = 140,
+                Height = 36,
                 Background = new SolidColorBrush(Color.FromRgb(37, 99, 235)),
                 Foreground = Brushes.White,
                 FontWeight = FontWeights.Bold,
                 BorderThickness = new Thickness(0),
                 IsDefault = true,
                 Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 8, 0)
+                Margin = new Thickness(0, 0, 10, 0)
             };
 
             var closeBtn = new Button {
                 Content = "닫기",
-                Width = 76,
-                Height = 34,
+                Width = 84,
+                Height = 36,
                 Background = new SolidColorBrush(Color.FromRgb(51, 65, 85)),
                 Foreground = Brushes.White,
                 BorderThickness = new Thickness(0),
                 IsCancel = true,
                 Cursor = Cursors.Hand
             };
+
+            bool pinSent = false;
+            var pollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+            pollTimer.Tick += (s, e) => {
+                ushort stat = _hardware.GetBcmStatus();
+                int connState = stat & 0x03;
+                if (pinSent && (connState == 1 || connState == 3)) {
+                    pollTimer.Stop();
+                    statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(74, 222, 128));
+                    statusTxt.Text = "✅ 스마트폰과 페어링 및 연결이 완료되었습니다!";
+                    ShowTip("페어링 완료", "스마트폰과 연결되었습니다.");
+                    var closeDelay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+                    closeDelay.Tick += (s2, e2) => {
+                        closeDelay.Stop();
+                        dlg.Close();
+                    };
+                    closeDelay.Start();
+                }
+            };
+            pollTimer.Start();
+            dlg.Closed += (s, e) => pollTimer.Stop();
 
             sendBtn.Click += (s, e) => {
                 string pin = pinBox.Text.Trim();
@@ -2281,8 +2362,9 @@ namespace EasyBlueStudio {
                 sendBtn.IsEnabled = false;
                 bool sent = _hardware.SendPinCode(pin);
                 if (sent) {
+                    pinSent = true;
                     statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(74, 222, 128));
-                    statusTxt.Text = "PIN 코드(" + pin + ") 전송 완료! 스마트폰에서 연결을 확인하세요.";
+                    statusTxt.Text = "PIN 코드(" + pin + ") 전송 완료! 스마트폰의 페어링 완료를 확인 중...";
                     ShowTip("페어링 PIN 전송 완료", "스마트폰의 블루투스 연결 상태를 확인하세요.");
                 } else {
                     statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113));
