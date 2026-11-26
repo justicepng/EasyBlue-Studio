@@ -396,8 +396,43 @@ namespace EasyBlueStudio {
             return HidD_SetFeature(_hidHandle, report, report.Length);
         }
 
+        private byte _lastHidKey = 0;
+
+        public bool SendHidKeyPulse(byte hidKey) {
+            if (_hidHandle == IntPtr.Zero || hidKey == 0) return false;
+            // Ver 2.1 Slot 6: 0x2400 | hidKey (Key Down) -> 20ms -> 0x2500 | hidKey (Key Up)
+            bool okDown = SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { hidKey, 0x24 });
+            Thread.Sleep(20);
+            bool okUp = SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { hidKey, 0x25 });
+            Thread.Sleep(20);
+            return okDown || okUp;
+        }
+
+        public bool SendPinCode(string pin) {
+            if (_hidHandle == IntPtr.Zero || string.IsNullOrEmpty(pin)) return false;
+            foreach (char c in pin.Trim()) {
+                byte hid = 0;
+                if (c >= '1' && c <= '9') hid = (byte)(0x1E + (c - '1'));
+                else if (c == '0') hid = 0x27;
+                if (hid != 0) {
+                    SendHidKeyPulse(hid);
+                }
+            }
+            // Send Enter (HID 0x28)
+            return SendHidKeyPulse(0x28);
+        }
+
         public bool SendKeyboardReport(byte modifier, byte[] keycodes) {
             if (_hidHandle == IntPtr.Zero) return false;
+            byte key = (keycodes != null && keycodes.Length > 0) ? keycodes[0] : (byte)0;
+            if (key != 0) {
+                _lastHidKey = key;
+                SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { key, 0x24 });
+            } else if (_lastHidKey != 0) {
+                SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { _lastHidKey, 0x25 });
+                _lastHidKey = 0;
+            }
+            // Also send legacy report for Ver 1.0 compatibility
             byte[] report = new byte[513];
             report[0] = 0x01; // Keyboard Report ID
             report[1] = modifier;
@@ -1369,7 +1404,7 @@ namespace EasyBlueStudio {
             pairBtn.Click += (s, e) => {
                 bool ok = _hardware.EnterPairingMode();
                 if (ok) {
-                    MessageBox.Show("이지블루 동글이 페어링 대기 모드로 진입했습니다.\n스마트폰의 블루투스 설정에서 'EasyBlue'를 검색하여 페어링하세요.", "페어링 대기", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ShowPairingPinDialog();
                 } else {
                     MessageBox.Show("동글과 통신할 수 없습니다. USB 연결 상태를 확인하세요.", "오류", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
@@ -2084,8 +2119,12 @@ namespace EasyBlueStudio {
 
             // 4. Bluetooth Pairing & Slots
             _trayMenu.Items.Add("📶 페어링 대기 모드 시작", null, (s, e) => {
-                _hardware.EnterPairingMode();
-                ShowTip("페어링 대기", "스마트폰 블루투스에서 'EasyBlue'를 검색하세요.");
+                bool ok = _hardware.EnterPairingMode();
+                if (ok) {
+                    Dispatcher.BeginInvoke(new Action(() => ShowPairingPinDialog()));
+                } else {
+                    ShowTip("페어링 오류", "동글과 통신할 수 없습니다. USB 연결을 확인하세요.");
+                }
             });
 
             var slotSubmenu = new System.Windows.Forms.ToolStripMenuItem("📱 디바이스 슬롯 선택");
@@ -2148,6 +2187,119 @@ namespace EasyBlueStudio {
                 }
                 Application.Current.Shutdown();
             });
+        }
+
+        private void ShowPairingPinDialog() {
+            var dlg = new Window {
+                Title = "EasyBlue 페어링 PIN 코드 입력",
+                Width = 420,
+                Height = 250,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize,
+                Topmost = true,
+                Background = new SolidColorBrush(Color.FromRgb(22, 27, 36)),
+                Foreground = Brushes.White
+            };
+
+            var root = new StackPanel { Margin = new Thickness(22, 18, 22, 18) };
+            root.Children.Add(new TextBlock {
+                Text = "📶 블루투스 페어링 대기 중입니다",
+                FontSize = 15,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248))
+            });
+            root.Children.Add(new TextBlock {
+                Text = "스마트폰에서 'EasyBlue'를 선택하면 화면에 숫자 PIN 코드가 표시됩니다.\n아래 입력창에 해당 PIN 코드를 입력하고 [Enter] 또는 [전송]을 누르세요.",
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.FromRgb(180, 192, 210)),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 8, 0, 14)
+            });
+
+            var pinBox = new TextBox {
+                Height = 38,
+                FontSize = 20,
+                FontWeight = FontWeights.Bold,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Background = new SolidColorBrush(Color.FromRgb(30, 37, 48)),
+                Foreground = Brushes.White,
+                BorderBrush = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
+                BorderThickness = new Thickness(1.5),
+                CaretBrush = Brushes.White,
+                MaxLength = 16
+            };
+            root.Children.Add(pinBox);
+
+            var statusTxt = new TextBlock {
+                Text = "",
+                FontSize = 11.5,
+                Foreground = new SolidColorBrush(Color.FromRgb(74, 222, 128)),
+                Margin = new Thickness(0, 8, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            root.Children.Add(statusTxt);
+
+            var btnPanel = new StackPanel {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 12, 0, 0)
+            };
+
+            var sendBtn = new Button {
+                Content = "PIN 전송 (Enter)",
+                Width = 130,
+                Height = 34,
+                Background = new SolidColorBrush(Color.FromRgb(37, 99, 235)),
+                Foreground = Brushes.White,
+                FontWeight = FontWeights.Bold,
+                BorderThickness = new Thickness(0),
+                IsDefault = true,
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+
+            var closeBtn = new Button {
+                Content = "닫기",
+                Width = 76,
+                Height = 34,
+                Background = new SolidColorBrush(Color.FromRgb(51, 65, 85)),
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                IsCancel = true,
+                Cursor = Cursors.Hand
+            };
+
+            sendBtn.Click += (s, e) => {
+                string pin = pinBox.Text.Trim();
+                if (string.IsNullOrEmpty(pin)) {
+                    statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36));
+                    statusTxt.Text = "스마트폰 화면에 표시된 숫자 PIN 코드를 입력하세요.";
+                    pinBox.Focus();
+                    return;
+                }
+                sendBtn.IsEnabled = false;
+                bool sent = _hardware.SendPinCode(pin);
+                if (sent) {
+                    statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(74, 222, 128));
+                    statusTxt.Text = "PIN 코드(" + pin + ") 전송 완료! 스마트폰에서 연결을 확인하세요.";
+                    ShowTip("페어링 PIN 전송 완료", "스마트폰의 블루투스 연결 상태를 확인하세요.");
+                } else {
+                    statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113));
+                    statusTxt.Text = "전송 실패: USB 동글 연결 상태를 확인하세요.";
+                }
+                sendBtn.IsEnabled = true;
+            };
+
+            closeBtn.Click += (s, e) => dlg.Close();
+            btnPanel.Children.Add(sendBtn);
+            btnPanel.Children.Add(closeBtn);
+            root.Children.Add(btnPanel);
+
+            dlg.Content = root;
+            dlg.Loaded += (s, e) => { pinBox.Focus(); };
+            dlg.Show();
+            dlg.Activate();
         }
 
         private void RestoreWindow() {
