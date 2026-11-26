@@ -457,28 +457,28 @@ namespace EasyBlueStudio {
 
         private byte _lastHidKey = 0;
 
-        public bool SendHidKeyPulse(byte hidKey) {
-            if (_hidHandle == IntPtr.Zero || hidKey == 0) return false;
-            // Ver 2.1 Slot 6: 0x2400 | hidKey (Key Down) -> 40ms -> 0x2500 | hidKey (Key Up)
-            bool okDown = SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { hidKey, 0x24 });
-            Thread.Sleep(40);
-            bool okUp = SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { hidKey, 0x25 });
-            Thread.Sleep(40);
-            return okDown || okUp;
+        public bool SendHidKeyPulse(byte code) {
+            if (_hidHandle == IntPtr.Zero || code == 0) return false;
+            // Ver 2.1 Slot 6: 0x2400 | code (Key Down) -> 20ms -> 0x2500 | code (Key Up)
+            bool okDown = SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { code, 0x24 });
+            Thread.Sleep(20);
+            bool okUp = SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0001, new byte[] { code, 0x25 });
+            Thread.Sleep(20);
+            return okDown && okUp;
         }
 
         public bool SendPinCode(string pin) {
             if (_hidHandle == IntPtr.Zero || string.IsNullOrEmpty(pin)) return false;
+            bool allOk = true;
             foreach (char c in pin.Trim()) {
-                byte hid = 0;
-                if (c >= '1' && c <= '9') hid = (byte)(0x1E + (c - '1'));
-                else if (c == '0') hid = 0x27;
-                if (hid != 0) {
-                    SendHidKeyPulse(hid);
+                if (c >= '0' && c <= '9') {
+                    // Dongle pairing firmware expects raw ASCII digit (0x30..0x39), not USB HID Usage ID
+                    if (!SendHidKeyPulse((byte)c)) allOk = false;
                 }
             }
-            // Send Enter (HID 0x28)
-            return SendHidKeyPulse(0x28);
+            // Send Enter as 0x0A ('\n') per Ver 2.1 pairing protocol
+            if (!SendHidKeyPulse(0x0A)) allOk = false;
+            return allOk;
         }
 
         public bool SendKeyboardReport(byte modifier, byte[] keycodes) {
@@ -2251,11 +2251,14 @@ namespace EasyBlueStudio {
         private void ShowPairingPinDialog() {
             var dlg = new Window {
                 Title = "EasyBlue 페어링 PIN 코드 입력",
-                Width = 450,
+                Width = 460,
+                MinHeight = 310,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
                 Topmost = true,
+                UseLayoutRounding = true,
+                SnapsToDevicePixels = true,
                 Background = new SolidColorBrush(Color.FromRgb(22, 27, 36)),
                 Foreground = Brushes.White
             };
@@ -2360,17 +2363,30 @@ namespace EasyBlueStudio {
                     return;
                 }
                 sendBtn.IsEnabled = false;
-                bool sent = _hardware.SendPinCode(pin);
-                if (sent) {
-                    pinSent = true;
-                    statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(74, 222, 128));
-                    statusTxt.Text = "PIN 코드(" + pin + ") 전송 완료! 스마트폰의 페어링 완료를 확인 중...";
-                    ShowTip("페어링 PIN 전송 완료", "스마트폰의 블루투스 연결 상태를 확인하세요.");
-                } else {
-                    statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113));
-                    statusTxt.Text = "전송 실패: USB 동글 연결 상태를 확인하세요.";
+                statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248));
+                statusTxt.Text = "PIN 코드(" + pin + ") 전송 중...";
+                System.Threading.ThreadPool.QueueUserWorkItem(_ => {
+                    bool sent = _hardware.SendPinCode(pin);
+                    Dispatcher.BeginInvoke(new Action(() => {
+                        if (sent) {
+                            pinSent = true;
+                            statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(74, 222, 128));
+                            statusTxt.Text = "PIN 코드(" + pin + ") 전송 완료! 스마트폰의 페어링 완료를 확인 중...";
+                            ShowTip("페어링 PIN 전송 완료", "스마트폰의 블루투스 연결 상태를 확인하세요.");
+                        } else {
+                            statusTxt.Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113));
+                            statusTxt.Text = "전송 실패: USB 동글 연결 상태를 확인하세요.";
+                        }
+                        sendBtn.IsEnabled = true;
+                    }));
+                });
+            };
+
+            pinBox.KeyDown += (s, e) => {
+                if (e.Key == Key.Enter && sendBtn.IsEnabled) {
+                    e.Handled = true;
+                    sendBtn.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                 }
-                sendBtn.IsEnabled = true;
             };
 
             closeBtn.Click += (s, e) => dlg.Close();
