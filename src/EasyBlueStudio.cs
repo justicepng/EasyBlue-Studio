@@ -304,63 +304,80 @@ namespace EasyBlueStudio {
                 ClearPairingSlot(s);
                 Thread.Sleep(30);
             }
-            ClearPairingSlot(0); // Clear all
+            ClearPairingSlot(0);
             return ok;
+        }
+
+        private bool SendVer21Packet(byte reportId, ushort cmd, ushort sub, ushort lenWord, ushort tag, byte[] extra = null) {
+            if (_hidHandle == IntPtr.Zero) return false;
+            byte[] packet = new byte[513];
+            packet[0] = reportId;
+            packet[1] = (byte)(cmd & 0xFF);
+            packet[2] = (byte)(cmd >> 8);
+            packet[3] = (byte)(sub & 0xFF);
+            packet[4] = (byte)(sub >> 8);
+            packet[5] = (byte)(lenWord & 0xFF);
+            packet[6] = (byte)(lenWord >> 8);
+            packet[7] = (byte)(tag & 0xFF);
+            packet[8] = (byte)(tag >> 8);
+            if (extra != null && extra.Length > 0) {
+                Array.Copy(extra, 0, packet, 9, Math.Min(extra.Length, 500));
+            }
+            return HidD_SetFeature(_hidHandle, packet, packet.Length);
         }
 
         public bool EnterPairingMode(int targetSlot = 0) {
             if (_hidHandle == IntPtr.Zero) return false;
 
-            // Full reverse-engineered EasyBlue multi-stage pairing sequence:
-            // 1. Reset / Init command (0x8000)
-            SendCommand(0x8000, 0x0000, null, 0x01);
-            Thread.Sleep(50);
+            // VID_1D54&PID_B002 uses EasyBlue Interface Ver 2.1 (0xEB01 / 0xEB04)
+            // 1. Init / Wakeup (Slot 4: 0xEB01 / 0x7FFF)
+            SendVer21Packet(0x01, 0xEB01, 0x7FFF, 0x0000, 0x0000);
+            Thread.Sleep(40);
 
-            // 2. Clear target slot or clear history if needed
-            if (targetSlot > 0 && targetSlot <= 4) {
-                ClearPairingSlot(targetSlot);
-                Thread.Sleep(30);
-            } else {
-                ClearAllPairings();
-                Thread.Sleep(30);
-            }
+            // 2. Device_CommDisc: Disconnect active BT link so radio returns to inquiry/page standby (Slot 11)
+            SendVer21Packet(0x01, 0xEB01, 0x8000, 0x0000, 0x0001, new byte[] { 0x00, 0xC0 });
+            Thread.Sleep(80);
 
-            // 3. Broadcast Pairing / Discoverable Mode (0x8300) across all report endpoints
+            // 3. Device_EEP_Enable(1) (Slot 18: 0xEB04 / 0x7000 / param=1)
+            byte[] eepOn = new byte[16];
+            eepOn[0] = 0x01; eepOn[1] = 0x04; eepOn[2] = 0xEB;
+            eepOn[3] = 0x00; eepOn[4] = 0x70;
+            eepOn[5] = 0x01; eepOn[6] = 0x00;
+            SendRawFeatureReport(eepOn);
+            Thread.Sleep(40);
+
+            // 4. Clear target BDADDR / enter pairing config (Slot 10: 0xEB01 / 0x8000 / 0x0007)
+            byte[] slot10 = new byte[32];
+            slot10[0] = 0x02; // Report ID 2 (len 32)
+            slot10[1] = 0x01; slot10[2] = 0xEB; // 0xEB01
+            slot10[3] = 0x00; slot10[4] = 0x80; // 0x8000
+            slot10[5] = 0x00; slot10[6] = 0x00;
+            slot10[7] = 0x07; slot10[8] = 0x00; // 0x0007
+            slot10[9] = 0x00; slot10[10] = 0x40;
+            slot10[11] = 0x00; slot10[12] = 0x41;
+            slot10[13] = 0x00; slot10[14] = 0x42;
+            slot10[15] = 0x00; slot10[16] = 0x43;
+            slot10[17] = 0x00; slot10[18] = 0x44;
+            slot10[19] = 0x00; slot10[20] = 0x45;
+            slot10[25] = 0x02; slot10[26] = 0xD0; // 0xD002
+            SendRawFeatureReport(slot10);
+            Thread.Sleep(40);
+
+            // 5. Device_EEP_Enable(0) (Slot 18: 0xEB04 / 0x7000 / param=0)
+            byte[] eepOff = new byte[16];
+            eepOff[0] = 0x01; eepOff[1] = 0x04; eepOff[2] = 0xEB;
+            eepOff[3] = 0x00; eepOff[4] = 0x70;
+            eepOff[5] = 0x00; eepOff[6] = 0x00;
+            SendRawFeatureReport(eepOff);
+            Thread.Sleep(40);
+
+            // 6. Radio / Mode refresh pulse (Slot 6: 0x23C0 -> 200ms -> 0x23C1)
+            SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0002, new byte[] { 0xC0, 0x23 });
+            Thread.Sleep(200);
+            SendVer21Packet(0x01, 0xEB01, 0x0000, 0x0000, 0x0002, new byte[] { 0xC1, 0x23 });
+
+            // 7. Legacy Ver 1.0 fallback (0x2ABF) for PID_B001 compatibility
             SendCommand(0x8300, 0x0000, null, 0x01);
-            SendCommand(0x8300, 0x0000, null, 0x02);
-            SendCommand(0x8300, 0x0000, null, 0x03);
-            Thread.Sleep(50);
-
-            // 4. Send Pairing Start / Slot Selection (0x8310)
-            ushort slotVal = (ushort)(targetSlot > 0 ? targetSlot : 0);
-            SendCommand(0x8310, slotVal, null, 0x01);
-            SendCommand(0x8310, slotVal, null, 0x02);
-            SendCommand(0x8310, slotVal, null, 0x03);
-            Thread.Sleep(50);
-
-            // 5. Send EasyBlue 2.1 Protocol Config Packet (0xEB01)
-            byte[] cfg = new byte[32];
-            cfg[0] = 0x02; // Report ID 2
-            cfg[1] = 0x01; cfg[2] = 0xEB; // Magic 0xEB01
-            cfg[3] = 0x00; cfg[4] = 0x80; // 0x8000
-            cfg[7] = 0x07;                // Inquiry scan + page scan flags
-            cfg[9] = 0x00; cfg[10] = 0x40;
-            cfg[11] = 0x00; cfg[12] = 0x41;
-            cfg[13] = 0x00; cfg[14] = 0x42;
-            cfg[15] = 0x00; cfg[16] = 0x43;
-            cfg[17] = 0x00; cfg[18] = 0x44;
-            cfg[19] = 0x00; cfg[20] = 0x45;
-            cfg[21] = 0x02; cfg[22] = 0xD0; // CoD: Peripheral Keyboard/Mouse
-            SendRawFeatureReport(cfg);
-            Thread.Sleep(30);
-
-            // 6. Send EasyBlue 2.1 State Packet (0xEB04 / 0x7000)
-            byte[] state = new byte[16];
-            state[0] = 0x01;
-            state[1] = 0x04; state[2] = 0xEB;
-            state[3] = 0x00; state[4] = 0x70;
-            SendRawFeatureReport(state);
-
             return true;
         }
 
@@ -370,7 +387,10 @@ namespace EasyBlueStudio {
         }
 
         public bool DisconnectDevice() {
-            return SendCommand(0x8100, 0x0002, null);
+            // Ver 2.1 Device_CommDisc (Slot 11) + Ver 1.0 fallback
+            bool ok = SendVer21Packet(0x01, 0xEB01, 0x8000, 0x0000, 0x0001, new byte[] { 0x00, 0xC0 });
+            SendCommand(0x8100, 0x0002, null);
+            return ok;
         }
 
         public bool SetLed(bool on) {
