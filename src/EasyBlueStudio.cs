@@ -448,6 +448,15 @@ namespace EasyBlueStudio {
         [DllImport("user32.dll")]
         private static extern bool GetCursorPos(out POINT lpPoint);
 
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
+
+        private const int SM_XVIRTUALSCREEN = 76;
+        private const int SM_YVIRTUALSCREEN = 77;
+        private const int SM_CXVIRTUALSCREEN = 78;
+        private const int SM_CYVIRTUALSCREEN = 79;
+        private const uint LLMHF_INJECTED = 0x00000001;
+
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT { public int x; public int y; }
 
@@ -665,12 +674,23 @@ namespace EasyBlueStudio {
             if (nCode >= 0) {
                 MSLLHOOKSTRUCT ms = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
 
+                // Ignore synthetic mouse events injected by SetCursorPos / SendInput
+                if ((ms.flags & LLMHF_INJECTED) != 0 && wParam == (IntPtr)WM_MOUSEMOVE) {
+                    return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+                }
+
                 if (!_isMobileActive) {
-                    if (_config.EdgeTraversalEnabled && wParam == (IntPtr)WM_MOUSEMOVE) {
-                        double screenRight = SystemParameters.VirtualScreenWidth - 2;
-                        double screenLeft = SystemParameters.VirtualScreenLeft + 2;
-                        double screenTop = SystemParameters.VirtualScreenTop + 2;
-                        double screenBottom = SystemParameters.VirtualScreenHeight - 2;
+                    if (_config.EdgeTraversalEnabled && _hardware.IsConnected && wParam == (IntPtr)WM_MOUSEMOVE) {
+                        // Use Win32 GetSystemMetrics (physical pixels) to match WH_MOUSE_LL coordinates under DPI scaling
+                        int vLeft = GetSystemMetrics(SM_XVIRTUALSCREEN);
+                        int vTop = GetSystemMetrics(SM_YVIRTUALSCREEN);
+                        int vWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+                        int vHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+                        int screenLeft = vLeft + 1;
+                        int screenTop = vTop + 1;
+                        int screenRight = vLeft + vWidth - 2;
+                        int screenBottom = vTop + vHeight - 2;
 
                         bool crossEdge = false;
                         if (_config.PhoneEdge == "Right" && ms.pt.x >= screenRight) crossEdge = true;
